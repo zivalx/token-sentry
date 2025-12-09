@@ -1,0 +1,320 @@
+"""
+Database for caching trending tokens
+Uses SQLite for persistence
+"""
+import sqlite3
+import json
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+
+class TokenDatabase:
+    """SQLite database for token caching"""
+
+    def __init__(self, db_path: str = "tokens.db"):
+        self.db_path = db_path
+        self.init_db()
+
+    def init_db(self):
+        """Initialize database schema"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Trending tokens cache table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trending_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chain TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Newest tokens cache table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS newest_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chain TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Top gainers cache table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS gainers_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chain TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Token details cache
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS token_cache (
+                address TEXT PRIMARY KEY,
+                chain TEXT NOT NULL,
+                symbol TEXT,
+                name TEXT,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Create indexes
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_trending_chain_expires
+            ON trending_cache(chain, expires_at)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_newest_chain_expires
+            ON newest_cache(chain, expires_at)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_gainers_chain_expires
+            ON gainers_cache(chain, expires_at)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_token_expires
+            ON token_cache(expires_at)
+        """)
+
+        conn.commit()
+        conn.close()
+
+    def save_trending(self, chain: str, tokens: List[Dict[str, Any]], ttl_minutes: int = 10):
+        """
+        Save trending tokens to cache
+        TTL: 10 minutes default (much longer than in-memory)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Delete old cache for this chain
+        cursor.execute("DELETE FROM trending_cache WHERE chain = ?", (chain,))
+
+        # Insert new cache
+        expires_at = datetime.now() + timedelta(minutes=ttl_minutes)
+        data_json = json.dumps(tokens)
+
+        cursor.execute("""
+            INSERT INTO trending_cache (chain, data, expires_at)
+            VALUES (?, ?, ?)
+        """, (chain, data_json, expires_at))
+
+        conn.commit()
+        conn.close()
+
+    def get_trending(self, chain: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached trending tokens if not expired"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT data, expires_at FROM trending_cache
+            WHERE chain = ? AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (chain, datetime.now()))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            data_json, expires_at = row
+            print(f"Cache HIT: Found trending data for {chain}, expires at {expires_at}")
+            return json.loads(data_json)
+
+        print(f"Cache MISS: No valid trending data for {chain}")
+        return None
+
+    def save_newest(self, chain: str, tokens: List[Dict[str, Any]], ttl_minutes: int = 10):
+        """Save newest tokens to cache"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Delete old cache for this chain
+        cursor.execute("DELETE FROM newest_cache WHERE chain = ?", (chain,))
+
+        # Insert new cache
+        expires_at = datetime.now() + timedelta(minutes=ttl_minutes)
+        data_json = json.dumps(tokens)
+
+        cursor.execute("""
+            INSERT INTO newest_cache (chain, data, expires_at)
+            VALUES (?, ?, ?)
+        """, (chain, data_json, expires_at))
+
+        conn.commit()
+        conn.close()
+
+    def get_newest(self, chain: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached newest tokens if not expired"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT data, expires_at FROM newest_cache
+            WHERE chain = ? AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (chain, datetime.now()))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            data_json, expires_at = row
+            print(f"Cache HIT: Found newest data for {chain}, expires at {expires_at}")
+            return json.loads(data_json)
+
+        print(f"Cache MISS: No valid newest data for {chain}")
+        return None
+
+    def save_gainers(self, chain: str, tokens: List[Dict[str, Any]], ttl_minutes: int = 10):
+        """Save top gainers to cache"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Delete old cache for this chain
+        cursor.execute("DELETE FROM gainers_cache WHERE chain = ?", (chain,))
+
+        # Insert new cache
+        expires_at = datetime.now() + timedelta(minutes=ttl_minutes)
+        data_json = json.dumps(tokens)
+
+        cursor.execute("""
+            INSERT INTO gainers_cache (chain, data, expires_at)
+            VALUES (?, ?, ?)
+        """, (chain, data_json, expires_at))
+
+        conn.commit()
+        conn.close()
+
+    def get_gainers(self, chain: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached top gainers if not expired"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT data, expires_at FROM gainers_cache
+            WHERE chain = ? AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (chain, datetime.now()))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            data_json, expires_at = row
+            print(f"Cache HIT: Found gainers data for {chain}, expires at {expires_at}")
+            return json.loads(data_json)
+
+        print(f"Cache MISS: No valid gainers data for {chain}")
+        return None
+
+    def save_token(self, address: str, chain: str, data: Dict[str, Any], ttl_minutes: int = 30):
+        """Save individual token data"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        expires_at = datetime.now() + timedelta(minutes=ttl_minutes)
+        data_json = json.dumps(data)
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO token_cache
+            (address, chain, symbol, name, data, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            address,
+            chain,
+            data.get("symbol", ""),
+            data.get("name", ""),
+            data_json,
+            expires_at
+        ))
+
+        conn.commit()
+        conn.close()
+
+    def get_token(self, address: str, chain: str) -> Optional[Dict[str, Any]]:
+        """Get cached token data if not expired"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT data FROM token_cache
+            WHERE address = ? AND chain = ? AND expires_at > ?
+        """, (address, chain, datetime.now()))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return json.loads(row[0])
+        return None
+
+    def cleanup_expired(self):
+        """Remove expired cache entries"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM trending_cache WHERE expires_at < ?", (datetime.now(),))
+        cursor.execute("DELETE FROM newest_cache WHERE expires_at < ?", (datetime.now(),))
+        cursor.execute("DELETE FROM gainers_cache WHERE expires_at < ?", (datetime.now(),))
+        cursor.execute("DELETE FROM token_cache WHERE expires_at < ?", (datetime.now(),))
+
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if deleted > 0:
+            print(f"Cleaned up {deleted} expired cache entries")
+
+    def get_stats(self) -> Dict[str, int]:
+        """Get cache statistics"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM trending_cache WHERE expires_at > ?", (datetime.now(),))
+        trending_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM newest_cache WHERE expires_at > ?", (datetime.now(),))
+        newest_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM gainers_cache WHERE expires_at > ?", (datetime.now(),))
+        gainers_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM token_cache WHERE expires_at > ?", (datetime.now(),))
+        token_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        return {
+            "trending_cached": trending_count,
+            "newest_cached": newest_count,
+            "gainers_cached": gainers_count,
+            "tokens_cached": token_count
+        }
+
+
+# Singleton instance
+_db = None
+
+def get_db() -> TokenDatabase:
+    """Get global database instance"""
+    global _db
+    if _db is None:
+        db_path = Path(__file__).parent / "tokens.db"
+        _db = TokenDatabase(str(db_path))
+    return _db

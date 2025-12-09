@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tokenhealth-backend
+    ports:
+      - "8001:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+    networks:
+      - tokenhealth-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tokenhealth-frontend
+    ports:
+      - "4000:80"
+    depends_on:
+      - backend
+    networks:
+      - tokenhealth-network
+    environment:
+      - VITE_API_BASE=/api
+
+networks:
+  tokenhealth-network:
+    driver: bridge
