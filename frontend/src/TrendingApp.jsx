@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import TokenExpandedRow from './TokenExpandedRow'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -10,6 +11,7 @@ function TrendingApp() {
   const [filter, setFilter] = useState('trending')
   const [contract, setContract] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
+  const [expandedToken, setExpandedToken] = useState(null)
 
   useEffect(() => {
     loadTokens()
@@ -56,9 +58,12 @@ function TrendingApp() {
   }
 
   const handleRowClick = (token) => {
-    // Set contract and scroll to search
-    setContract(token.address)
-    document.querySelector('.search-section').scrollIntoView({ behavior: 'smooth' })
+    // Toggle expansion - if same token clicked, collapse it
+    if (expandedToken?.address === token.address) {
+      setExpandedToken(null)
+    } else {
+      setExpandedToken(token)
+    }
   }
 
   const handleAnalyze = async () => {
@@ -230,10 +235,18 @@ function TrendingApp() {
                     </tr>
                   </thead>
                   <tbody>
-                    {trending.map((token, index) => (
-                      <tr key={token.address} onClick={() => handleRowClick(token)}>
+                    {trending.map((token, index) => {
+                      const analyzable = isTokenAnalyzable(token)
+                      return (
+                      <tr
+                        key={token.address}
+                        onClick={() => handleRowClick(token)}
+                        className={analyzable ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-60'}
+                        title={analyzable ? 'Click to analyze' : 'No contract address available'}
+                      >
                         <td>
                           <span className="token-rank">{index + 1}</span>
+                          {!analyzable && <span className="ml-2 text-xs text-gray-400">⚠️</span>}
                         </td>
                         <td>
                           <div className="token-info">
@@ -278,7 +291,7 @@ function TrendingApp() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
@@ -286,6 +299,14 @@ function TrendingApp() {
           )}
         </div>
       </div>
+
+      {/* Token Detail Modal */}
+      {selectedToken && (
+        <TokenDetailModal
+          token={selectedToken}
+          onClose={() => setSelectedToken(null)}
+        />
+      )}
     </>
   )
 }

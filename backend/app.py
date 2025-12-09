@@ -315,28 +315,36 @@ async def resolve_contract_address(request: HealthRequest) -> str:
 
 
 def sanitize_address(address: str) -> str:
-    """Validate and sanitize Ethereum address"""
+    """Validate and sanitize Ethereum address - lenient mode for best-effort analysis"""
     if not address:
         raise HTTPException(status_code=400, detail="Contract address is required")
 
     # Remove whitespace
     address = address.strip()
 
+    # If it's a placeholder (cmc_xxx), return as-is for market-only analysis
+    if address.startswith("cmc_"):
+        return address
+
     # Check if starts with 0x
     if not address.startswith("0x"):
+        # Could be a ticker symbol - return as-is
+        if len(address) <= 10 and address.isalnum():
+            return address
         address = "0x" + address
 
     # Check length (42 chars: 0x + 40 hex chars)
     if len(address) != 42:
-        raise HTTPException(status_code=400, detail="Invalid contract address length")
+        # Not a valid Ethereum address, but return it anyway for market analysis
+        return address
 
     # Check if valid hex
     try:
         int(address, 16)
+        return address
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid contract address format")
-
-    return address
+        # Invalid hex, but return for market-only analysis
+        return address
 
 
 def build_health_graph(health_data) -> Dict[str, Any]:
