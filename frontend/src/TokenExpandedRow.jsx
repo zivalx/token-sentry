@@ -1,345 +1,169 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-
-function TokenExpandedRow({ token, onClose }) {
-  const [loading, setLoading] = useState(true)
-  const [analysis, setAnalysis] = useState(null)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    fetchAnalysis()
-  }, [])
-
-  const fetchAnalysis = async () => {
-    try {
-      const response = await axios.post(
-        `${API_BASE}/health/comprehensive`,
-        {
-          contract: token.address || token.symbol,
-          chain: 'ethereum'
-        }
-      )
-      setAnalysis(response.data)
-      setError(null)
-    } catch (err) {
-      console.error('Analysis error:', err)
-      // Don't show error, just show limited data
-      setError('Limited data available')
-    } finally {
-      setLoading(false)
-    }
+function TokenExpandedRow({ token }) {
+  const formatNumber = (num) => {
+    if (!num) return 'N/A'
+    if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+    if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+    if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+    return `$${num.toFixed(2)}`
   }
 
-  const getScoreColor = (score) => {
-    if (!score) return 'bg-gray-100 text-gray-600'
-    if (score >= 80) return 'bg-green-100 text-green-700'
-    if (score >= 60) return 'bg-blue-100 text-blue-700'
-    if (score >= 40) return 'bg-yellow-100 text-yellow-700'
-    if (score >= 20) return 'bg-orange-100 text-orange-700'
-    return 'bg-red-100 text-red-700'
+  const getRiskColor = (score) => {
+    if (!score && score !== 0) return 'text-gray-400'
+    if (score < 30) return 'text-green-400'  // Low risk
+    if (score < 60) return 'text-yellow-400' // Moderate risk
+    return 'text-red-400'                     // High risk
   }
 
-  const getScoreBadgeColor = (score) => {
-    if (!score) return 'border-gray-300 bg-gray-50'
-    if (score >= 80) return 'border-green-400 bg-green-50'
-    if (score >= 60) return 'border-blue-400 bg-blue-50'
-    if (score >= 40) return 'border-yellow-400 bg-yellow-50'
-    if (score >= 20) return 'border-orange-400 bg-orange-50'
-    return 'border-red-400 bg-red-50'
+  const getRiskBg = (score) => {
+    if (!score && score !== 0) return 'bg-gray-900'
+    if (score < 30) return 'bg-green-900/20'
+    if (score < 60) return 'bg-yellow-900/20'
+    return 'bg-red-900/20'
   }
 
-  const getRiskBadge = (level) => {
-    const badges = {
-      'very_low': { color: 'bg-green-500', text: 'Very Low Risk', icon: '🟢' },
-      'low': { color: 'bg-blue-500', text: 'Low Risk', icon: '🔵' },
-      'moderate': { color: 'bg-yellow-500', text: 'Moderate Risk', icon: '🟡' },
-      'high': { color: 'bg-orange-500', text: 'High Risk', icon: '🟠' },
-      'critical': { color: 'bg-red-500', text: 'Critical Risk', icon: '🔴' }
-    }
-    return badges[level] || badges.moderate
+  const getRiskLabel = (score) => {
+    if (!score && score !== 0) return 'Unknown'
+    if (score < 30) return 'Low Risk'
+    if (score < 60) return 'Moderate Risk'
+    return 'High Risk'
   }
 
-  if (loading) {
-    return (
-      <tr className="border-l-4 border-blue-500">
-        <td colSpan="9" className="p-0">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-8">
-            <div className="flex items-center justify-center space-x-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <div className="text-gray-700">
-                <p className="font-semibold">Analyzing {token.symbol}...</p>
-                <p className="text-sm text-gray-600">Fetching data from multiple sources</p>
-              </div>
-            </div>
-          </div>
-        </td>
-      </tr>
-    )
+  const getRiskDescription = (score) => {
+    if (!score && score !== 0) return 'Risk data not available'
+    if (score < 30) return 'This token shows positive indicators and low risk factors'
+    if (score < 60) return 'This token has some risk factors that should be monitored'
+    return 'This token shows significant risk factors - exercise caution'
   }
-
-  if (!analysis && error) {
-    return (
-      <tr className="border-l-4 border-yellow-500">
-        <td colSpan="9" className="p-0">
-          <div className="bg-yellow-50 p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">⚠️</span>
-                <div>
-                  <p className="font-semibold text-yellow-900">Limited Analysis Available</p>
-                  <p className="text-sm text-yellow-700">Showing market data only - on-chain data unavailable</p>
-                </div>
-              </div>
-              <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-xl font-bold">
-                ×
-              </button>
-            </div>
-            {/* Show basic token info from trending data */}
-            <div className="mt-4 grid grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg p-4 border border-yellow-200">
-                <p className="text-xs text-gray-600">Price</p>
-                <p className="text-lg font-bold text-gray-900">${parseFloat(token.priceUsd).toFixed(6)}</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 border border-yellow-200">
-                <p className="text-xs text-gray-600">24h Change</p>
-                <p className={`text-lg font-bold ${token.priceChange24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {token.priceChange24h >= 0 ? '+' : ''}{token.priceChange24h}%
-                </p>
-              </div>
-              <div className="bg-white rounded-lg p-4 border border-yellow-200">
-                <p className="text-xs text-gray-600">Volume 24h</p>
-                <p className="text-lg font-bold text-gray-900">
-                  ${(token.volume24h / 1e6).toFixed(2)}M
-                </p>
-              </div>
-              <div className="bg-white rounded-lg p-4 border border-yellow-200">
-                <p className="text-xs text-gray-600">Liquidity</p>
-                <p className="text-lg font-bold text-gray-900">
-                  ${(token.liquidity / 1e6).toFixed(2)}M
-                </p>
-              </div>
-            </div>
-          </div>
-        </td>
-      </tr>
-    )
-  }
-
-  const riskBadge = getRiskBadge(analysis?.risk_level)
 
   return (
-    <tr className="border-l-4 border-indigo-500">
+    <tr className="expanded-row">
       <td colSpan="9" className="p-0">
-        <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50">
-          {/* Header Section */}
-          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="bg-white/20 rounded-full w-16 h-16 flex items-center justify-center">
-                  <span className="text-2xl font-bold">{token.symbol}</span>
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold">{token.name}</h3>
-                  <p className="text-blue-100 text-sm">Comprehensive Health Analysis</p>
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                className="text-white/80 hover:text-white text-3xl font-bold leading-none"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-
-          {/* Main Content */}
-          <div className="p-6 space-y-6">
-            {/* Score Dashboard */}
-            <div className="grid grid-cols-4 gap-4">
-              {/* Overall Score - Large */}
-              <div className={`col-span-1 rounded-xl p-6 border-2 ${getScoreBadgeColor(analysis.overall_score)}`}>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600 mb-2">Health Score</p>
-                  <div className={`text-5xl font-bold ${getScoreColor(analysis.overall_score).split(' ')[1]}`}>
-                    {analysis.overall_score?.toFixed(0) || 'N/A'}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">out of 100</p>
-
-                  {/* Mini gauge */}
-                  <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        analysis.overall_score >= 80 ? 'bg-green-500' :
-                        analysis.overall_score >= 60 ? 'bg-blue-500' :
-                        analysis.overall_score >= 40 ? 'bg-yellow-500' :
-                        analysis.overall_score >= 20 ? 'bg-orange-500' : 'bg-red-500'
-                      }`}
-                      style={{ width: `${analysis.overall_score}%` }}
-                    />
-                  </div>
+        <div style={{
+          background: 'var(--bg-tertiary)',
+          borderTop: '1px solid var(--border-color)',
+          borderBottom: '1px solid var(--border-color)'
+        }}>
+          <div className="p-6">
+            {/* Market Overview */}
+            <div className="grid grid-cols-6 gap-3 mb-6">
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">Price</div>
+                <div className="text-lg font-semibold text-white">
+                  {token.priceUsd ? `$${parseFloat(token.priceUsd).toFixed(6)}` : 'N/A'}
                 </div>
               </div>
 
-              {/* Risk Level */}
-              <div className="col-span-1 bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                <p className="text-sm font-medium text-gray-600 mb-3">Risk Level</p>
-                <div className="flex flex-col items-center">
-                  <span className="text-4xl mb-2">{riskBadge.icon}</span>
-                  <span className={`${riskBadge.color} text-white px-4 py-2 rounded-full text-sm font-semibold`}>
-                    {riskBadge.text}
-                  </span>
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">24h Change</div>
+                <div className={`text-lg font-semibold ${token.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {token.priceChange24h >= 0 ? '+' : ''}{token.priceChange24h}%
                 </div>
               </div>
 
-              {/* Confidence */}
-              <div className="col-span-1 bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                <p className="text-sm font-medium text-gray-600 mb-2">Analysis Confidence</p>
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-gray-900">
-                    {(analysis.confidence * 100).toFixed(0)}%
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {analysis.category_scores?.length || 0} of 7 categories
-                  </p>
-                  <div className="mt-3 flex justify-center space-x-1">
-                    {[...Array(7)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-2 h-2 rounded-full ${
-                          i < (analysis.category_scores?.length || 0) ? 'bg-blue-500' : 'bg-gray-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">Volume 24h</div>
+                <div className="text-lg font-semibold text-white">
+                  {formatNumber(token.volume24h)}
                 </div>
               </div>
 
-              {/* Data Completeness */}
-              <div className="col-span-1 bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                <p className="text-sm font-medium text-gray-600 mb-2">Data Completeness</p>
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-gray-900">
-                    {(analysis.data_completeness * 100).toFixed(0)}%
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">fields populated</p>
-                  <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full transition-all"
-                      style={{ width: `${analysis.data_completeness * 100}%` }}
-                    />
-                  </div>
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">Liquidity</div>
+                <div className="text-lg font-semibold text-white">
+                  {formatNumber(token.liquidity)}
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">Supply</div>
+                <div className="text-lg font-semibold text-white">
+                  {token.circulatingSupply ? `${(token.circulatingSupply / 1e6).toFixed(0)}M` :
+                   token.totalSupply ? `${(token.totalSupply / 1e6).toFixed(0)}M` : 'N/A'}
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-4">
+                <div className="text-xs text-gray-500 mb-1">Exchanges</div>
+                <div className="text-lg font-semibold text-white">
+                  {token.exchanges?.length || 0}
                 </div>
               </div>
             </div>
 
-            {/* Category Scores - Compact Grid */}
-            {analysis.category_scores && analysis.category_scores.length > 0 && (
-              <div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm mr-2">
-                    Category Breakdown
-                  </span>
-                </h4>
-                <div className="grid grid-cols-7 gap-3">
-                  {analysis.category_scores.map((cat, idx) => (
-                    <div key={idx} className="bg-white rounded-lg p-4 border-2 border-gray-200 hover:border-indigo-300 transition-all">
-                      <div className="text-center">
-                        <p className="text-xs font-medium text-gray-600 uppercase mb-2">
-                          {cat.category}
-                        </p>
-                        <div className={`text-3xl font-bold ${getScoreColor(cat.score).split(' ')[1]} mb-2`}>
-                          {cat.score.toFixed(0)}
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
-                          <div
-                            className={`h-1.5 rounded-full ${
-                              cat.score >= 70 ? 'bg-green-500' :
-                              cat.score >= 50 ? 'bg-blue-500' :
-                              cat.score >= 30 ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}
-                            style={{ width: `${cat.score}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-500">{(cat.weight * 100).toFixed(0)}% weight</p>
+            {/* Risk Analysis - Using existing riskScore from token */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* Risk Score */}
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-6">
+                <div className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Risk Score</div>
+                <div className="flex items-center justify-center mb-3">
+                  <div className={`text-5xl font-bold ${getRiskColor(token.riskScore)}`}>
+                    {token.riskScore || token.riskScore === 0 ? token.riskScore : 'N/A'}
+                  </div>
+                  <div className="text-xl text-gray-600 ml-2">/100</div>
+                </div>
+                <div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden mb-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      token.riskScore < 30 ? 'bg-green-500' :
+                      token.riskScore < 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${token.riskScore}%` }}
+                  />
+                </div>
+                <div className="text-xs text-gray-500 text-center">{getRiskLabel(token.riskScore)}</div>
+              </div>
+
+              {/* Risk Level Badge */}
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-6">
+                <div className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Risk Assessment</div>
+                <div className={`${getRiskBg(token.riskScore)} ${getRiskColor(token.riskScore)} px-4 py-4 rounded-lg text-center font-semibold text-xl mb-3`}>
+                  {getRiskLabel(token.riskScore)}
+                </div>
+                <div className="text-xs text-gray-400 text-center">
+                  {getRiskDescription(token.riskScore)}
+                </div>
+              </div>
+
+              {/* Additional Info */}
+              <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} className="rounded-lg p-6">
+                <div className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Token Details</div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Symbol:</span>
+                    <span className="text-white font-semibold">{token.symbol}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Name:</span>
+                    <span className="text-white font-semibold truncate ml-2">{token.name}</span>
+                  </div>
+                  {token.address && token.address !== 'N/A' && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Address:</span>
+                      <span className="text-blue-400 font-mono text-xs truncate ml-2" title={token.address}>
+                        {token.address.slice(0, 6)}...{token.address.slice(-4)}
+                      </span>
+                    </div>
+                  )}
+                  {token.exchanges && token.exchanges.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs text-gray-500 mb-2">Listed on:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {token.exchanges.slice(0, 3).map((ex, i) => (
+                          <span key={i} className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded">
+                            {ex.replace('_', ' ')}
+                          </span>
+                        ))}
+                        {token.exchanges.length > 3 && (
+                          <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded">
+                            +{token.exchanges.length - 3} more
+                          </span>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
-            )}
-
-            {/* Flags Section - Compact */}
-            <div className="grid grid-cols-3 gap-4">
-              {/* Red Flags */}
-              {analysis.red_flags && analysis.red_flags.length > 0 && (
-                <div className="bg-red-50 rounded-lg p-4 border-l-4 border-red-500">
-                  <h5 className="font-semibold text-red-900 text-sm mb-2 flex items-center">
-                    <span className="mr-2">🚨</span> Critical Issues
-                  </h5>
-                  <ul className="space-y-1">
-                    {analysis.red_flags.slice(0, 3).map((flag, idx) => (
-                      <li key={idx} className="text-xs text-red-800 flex items-start">
-                        <span className="mr-1">•</span>
-                        <span>{flag.replace(/\[.*?\]\s*/, '')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Yellow Flags */}
-              {analysis.yellow_flags && analysis.yellow_flags.length > 0 && (
-                <div className="bg-yellow-50 rounded-lg p-4 border-l-4 border-yellow-500">
-                  <h5 className="font-semibold text-yellow-900 text-sm mb-2 flex items-center">
-                    <span className="mr-2">⚠️</span> Warnings
-                  </h5>
-                  <ul className="space-y-1">
-                    {analysis.yellow_flags.slice(0, 3).map((flag, idx) => (
-                      <li key={idx} className="text-xs text-yellow-800 flex items-start">
-                        <span className="mr-1">•</span>
-                        <span>{flag.replace(/\[.*?\]\s*/, '')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Green Flags */}
-              {analysis.green_flags && analysis.green_flags.length > 0 && (
-                <div className="bg-green-50 rounded-lg p-4 border-l-4 border-green-500">
-                  <h5 className="font-semibold text-green-900 text-sm mb-2 flex items-center">
-                    <span className="mr-2">✅</span> Strengths
-                  </h5>
-                  <ul className="space-y-1">
-                    {analysis.green_flags.slice(0, 3).map((flag, idx) => (
-                      <li key={idx} className="text-xs text-green-800 flex items-start">
-                        <span className="mr-1">•</span>
-                        <span>{flag.replace(/\[.*?\]\s*/, '')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
-
-            {/* Recommendations */}
-            {analysis.recommendations && analysis.recommendations.length > 0 && (
-              <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
-                <h5 className="font-semibold text-blue-900 text-sm mb-3 flex items-center">
-                  <span className="mr-2">💡</span> Recommendations
-                </h5>
-                <div className="grid grid-cols-2 gap-2">
-                  {analysis.recommendations.slice(0, 4).map((rec, idx) => (
-                    <div key={idx} className="flex items-start text-xs text-blue-900">
-                      <span className="font-semibold mr-2">{idx + 1}.</span>
-                      <span>{rec}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </td>

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import TokenExpandedRow from './TokenExpandedRow'
+import TokenDetailModal from './TokenDetailModal'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -12,6 +13,7 @@ function TrendingApp() {
   const [contract, setContract] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [expandedToken, setExpandedToken] = useState(null)
+  const [selectedToken, setSelectedToken] = useState(null)
 
   useEffect(() => {
     loadTokens()
@@ -57,7 +59,14 @@ function TrendingApp() {
     setFilter('trending')
   }
 
+  const isTokenAnalyzable = (token) => {
+    return token?.address && token.address !== 'N/A'
+  }
+
   const handleRowClick = (token) => {
+    // Only allow click if token is analyzable
+    if (!isTokenAnalyzable(token)) return
+
     // Toggle expansion - if same token clicked, collapse it
     if (expandedToken?.address === token.address) {
       setExpandedToken(null)
@@ -237,9 +246,10 @@ function TrendingApp() {
                   <tbody>
                     {trending.map((token, index) => {
                       const analyzable = isTokenAnalyzable(token)
+                      const isExpanded = expandedToken?.address === token.address
                       return (
+                      <React.Fragment key={token.address}>
                       <tr
-                        key={token.address}
                         onClick={() => handleRowClick(token)}
                         className={analyzable ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-60'}
                         title={analyzable ? 'Click to analyze' : 'No contract address available'}
@@ -291,7 +301,12 @@ function TrendingApp() {
                           </span>
                         </td>
                       </tr>
-                    )})}
+                      {isExpanded && (
+                        <TokenExpandedRow token={token} />
+                      )}
+                      </React.Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
