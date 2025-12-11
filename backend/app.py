@@ -189,7 +189,7 @@ async def comprehensive_health_analyze(
             overall_score=health_data.health_score.overall_score,
             risk_level=health_data.health_score.risk_level.value,
             confidence=health_data.health_score.confidence,
-            data_completeness=health_data.data_completeness,
+            data_completeness=health_data.health_score.data_completeness,
             category_scores=category_scores,
             red_flags=health_data.health_score.red_flags,
             yellow_flags=health_data.health_score.yellow_flags,

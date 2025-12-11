@@ -80,14 +80,72 @@ function TrendingApp() {
       setError('Please enter a contract address or ticker')
       return
     }
+
+    const searchTerm = contract.trim().toUpperCase()
+
+    // First, search for token in existing list
+    const foundToken = trending.find(token =>
+      token.symbol?.toUpperCase() === searchTerm ||
+      token.name?.toUpperCase().includes(searchTerm) ||
+      token.address?.toLowerCase() === contract.trim().toLowerCase()
+    )
+
+    if (foundToken) {
+      // Token found in list - expand it!
+      setExpandedToken(foundToken)
+      setContract('')
+
+      // Scroll to the token row
+      setTimeout(() => {
+        const row = document.querySelector(`tr[data-address="${foundToken.address}"]`)
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
+      return
+    }
+
+    // Token not in current list - analyze it via API
     setSearchLoading(true)
     setError(null)
+
     try {
-      // Simulate analysis
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      alert(`Analysis for ${contract} - Feature coming soon!`)
+      console.log('Analyzing token via API:', contract.trim())
+      const response = await axios.post(`${API_BASE}/health/comprehensive`, {
+        contract: contract.trim(),
+        chain: 'ethereum'
+      })
+
+      console.log('Analysis response:', response.data)
+
+      // Create a token object from the response
+      const analyzedToken = {
+        symbol: response.data.symbol || contract.trim(),
+        name: response.data.name || 'Unknown Token',
+        address: contract.trim(),
+        priceUsd: response.data.price_usd || 0,
+        priceChange24h: response.data.price_change_24h || 0,
+        volume24h: response.data.volume_24h || 0,
+        liquidity: response.data.liquidity || 0,
+        circulatingSupply: response.data.circulating_supply || 0,
+        totalSupply: response.data.total_supply || 0,
+        exchanges: response.data.exchanges || [],
+        riskScore: response.data.overall_score || 0
+      }
+
+      // Add to trending list temporarily at the top
+      setTrending([analyzedToken, ...trending])
+
+      // Expand it
+      setExpandedToken(analyzedToken)
+      setContract('')
+
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+
     } catch (err) {
-      setError('Analysis failed')
+      console.error('Analysis error:', err)
+      setError(`Could not analyze "${contract}". Please check the contract address or symbol and try again. Error: ${err.response?.data?.detail || err.message}`)
     } finally {
       setSearchLoading(false)
     }
@@ -250,6 +308,7 @@ function TrendingApp() {
                       return (
                       <React.Fragment key={token.address}>
                       <tr
+                        data-address={token.address}
                         onClick={() => handleRowClick(token)}
                         className={analyzable ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-60'}
                         title={analyzable ? 'Click to analyze' : 'No contract address available'}
