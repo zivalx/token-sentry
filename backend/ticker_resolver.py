@@ -4,7 +4,6 @@ Converts ticker symbols to contract addresses using multiple APIs
 """
 import requests
 from typing import Optional, Dict, List, Any
-from functools import lru_cache
 from cmc_client import get_cmc_client
 
 
@@ -14,26 +13,29 @@ class TickerResolver:
     def __init__(self):
         self.coingecko_base = "https://api.coingecko.com/api/v3"
         self.dexscreener_base = "https://api.dexscreener.com/latest/dex"
+        self._resolve_cache = {}
 
-    @lru_cache(maxsize=1000)
     def resolve(self, ticker: str, chain: str = "ethereum") -> Optional[str]:
         """
         Resolve ticker to contract address
         Returns: contract address or None
+
+        Successful resolutions are cached; failures are NOT — a transient
+        API error must not blacklist a ticker for the process lifetime.
         """
         ticker = ticker.upper()
+        cache_key = (ticker, chain)
+        if cache_key in self._resolve_cache:
+            return self._resolve_cache[cache_key]
 
-        # Try CoinGecko first (more comprehensive)
-        address = self._resolve_coingecko(ticker, chain)
+        # Try CoinGecko first (more comprehensive), then DEXScreener
+        address = self._resolve_coingecko(ticker, chain) or self._resolve_dexscreener(ticker, chain)
+
         if address:
-            return address
-
-        # Fallback to DEXScreener
-        address = self._resolve_dexscreener(ticker, chain)
-        if address:
-            return address
-
-        return None
+            if len(self._resolve_cache) >= 1000:
+                self._resolve_cache.pop(next(iter(self._resolve_cache)))
+            self._resolve_cache[cache_key] = address
+        return address
 
     def search(self, query: str, chain: str = "ethereum", limit: int = 10) -> List[Dict[str, Any]]:
         """

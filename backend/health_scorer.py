@@ -20,7 +20,7 @@ from health_models import (
     TokenHealthData, TokenHealthScore, CategoryScore,
     MarketMetrics, OnChainMetrics, LiquidityMetrics,
     SecurityMetrics, SocialMetrics, TeamMetrics, UtilityMetrics,
-    DEFAULT_CATEGORY_WEIGHTS, get_risk_level
+    DEFAULT_CATEGORY_WEIGHTS, get_risk_level, has_data
 )
 
 logger = logging.getLogger(__name__)
@@ -37,34 +37,28 @@ class HealthScorer:
 
         category_scores = []
 
-        # Score each category
-        if health_data.market:
-            market_score = self._score_market(health_data.market)
-            category_scores.append(market_score)
+        # Score each category — a metrics object with no populated fields means
+        # "nothing fetched" and must not be scored as neutral-50
+        if has_data(health_data.market, ignore={"symbol", "name"}):
+            category_scores.append(self._score_market(health_data.market))
 
-        if health_data.onchain:
-            onchain_score = self._score_onchain(health_data.onchain)
-            category_scores.append(onchain_score)
+        if has_data(health_data.onchain, ignore={"contract_address", "chain"}):
+            category_scores.append(self._score_onchain(health_data.onchain))
 
-        if health_data.liquidity:
-            liquidity_score = self._score_liquidity(health_data.liquidity)
-            category_scores.append(liquidity_score)
+        if has_data(health_data.liquidity):
+            category_scores.append(self._score_liquidity(health_data.liquidity))
 
-        if health_data.security:
-            security_score = self._score_security(health_data.security)
-            category_scores.append(security_score)
+        if has_data(health_data.security):
+            category_scores.append(self._score_security(health_data.security))
 
-        if health_data.social:
-            social_score = self._score_social(health_data.social)
-            category_scores.append(social_score)
+        if has_data(health_data.social):
+            category_scores.append(self._score_social(health_data.social))
 
-        if health_data.team:
-            team_score = self._score_team(health_data.team)
-            category_scores.append(team_score)
+        if has_data(health_data.team):
+            category_scores.append(self._score_team(health_data.team))
 
-        if health_data.utility:
-            utility_score = self._score_utility(health_data.utility)
-            category_scores.append(utility_score)
+        if has_data(health_data.utility):
+            category_scores.append(self._score_utility(health_data.utility))
 
         # Calculate weighted overall score
         overall_score = sum(cs.weighted_score for cs in category_scores)
@@ -73,6 +67,10 @@ class HealthScorer:
         total_weight = sum(cs.weight for cs in category_scores)
         if total_weight > 0 and total_weight < 1.0:
             overall_score = overall_score / total_weight
+
+        # Clamp before ANY derived value — an unclamped 104 maps to no risk
+        # threshold and used to fall through to CRITICAL
+        overall_score = min(100.0, max(0.0, overall_score))
 
         # Collect flags
         red_flags, yellow_flags, green_flags = self._collect_flags(category_scores)
@@ -85,7 +83,7 @@ class HealthScorer:
         confidence = self._calculate_confidence(data_completeness, len(category_scores))
 
         health_score = TokenHealthScore(
-            overall_score=min(100, max(0, overall_score)),
+            overall_score=overall_score,
             risk_level=get_risk_level(overall_score),
             category_scores=category_scores,
             confidence=confidence,
@@ -136,9 +134,9 @@ class HealthScorer:
                 score += 20
                 factors["volume"] = 20
                 strengths.append("Healthy trading volume")
-            elif volume_to_mcap > 1.0:  # Very high volume
-                score += 10
-                factors["volume"] = 10
+            elif volume_to_mcap > 1.0:  # Very high volume — a risk signal, not a strength
+                score -= 10
+                factors["volume"] = -10
                 issues.append("Unusually high volume (possible manipulation)")
             elif volume_to_mcap < 0.01:  # Very low volume
                 score -= 15
@@ -196,11 +194,12 @@ class HealthScorer:
             else:
                 factors["listings"] = 5
 
-        weighted_score = (score / 100) * self.weights["market"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["market"]
 
         return CategoryScore(
             category="market",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["market"],
             weighted_score=weighted_score,
             factors=factors,
@@ -224,14 +223,14 @@ class HealthScorer:
             elif metrics.contract_age_days > 180:  # >6 months
                 score += 15
                 factors["age"] = 15
+            elif metrics.contract_age_days < 7:  # <1 week — narrowest bucket first
+                score -= 25
+                factors["age"] = -25
+                issues.append("Extremely new contract (<7 days)")
             elif metrics.contract_age_days < 30:  # <1 month
                 score -= 15
                 factors["age"] = -15
                 issues.append("Very new contract (<30 days)")
-            elif metrics.contract_age_days < 7:  # <1 week
-                score -= 25
-                factors["age"] = -25
-                issues.append("Extremely new contract (<7 days)")
             else:
                 factors["age"] = 5
 
@@ -315,11 +314,12 @@ class HealthScorer:
             factors["mintable"] = -10
             issues.append("Mintable with admin control")
 
-        weighted_score = (score / 100) * self.weights["onchain"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["onchain"]
 
         return CategoryScore(
             category="onchain",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["onchain"],
             weighted_score=weighted_score,
             factors=factors,
@@ -415,11 +415,12 @@ class HealthScorer:
             factors["lp_concentration"] = -10
             issues.append("LP highly concentrated")
 
-        weighted_score = (score / 100) * self.weights["liquidity"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["liquidity"]
 
         return CategoryScore(
             category="liquidity",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["liquidity"],
             weighted_score=weighted_score,
             factors=factors,
@@ -513,11 +514,12 @@ class HealthScorer:
                 factors["certik"] = -10
                 issues.append(f"Low CertiK score: {metrics.certik_score}")
 
-        weighted_score = (score / 100) * self.weights["security"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["security"]
 
         return CategoryScore(
             category="security",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["security"],
             weighted_score=weighted_score,
             factors=factors,
@@ -604,11 +606,12 @@ class HealthScorer:
         score += github_score
         factors["github"] = github_score
 
-        weighted_score = (score / 100) * self.weights["social"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["social"]
 
         return CategoryScore(
             category="social",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["social"],
             weighted_score=weighted_score,
             factors=factors,
@@ -687,11 +690,12 @@ class HealthScorer:
             factors["updates"] = -10
             issues.append("No updates in 90+ days")
 
-        weighted_score = (score / 100) * self.weights["team"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["team"]
 
         return CategoryScore(
             category="team",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["team"],
             weighted_score=weighted_score,
             factors=factors,
@@ -784,11 +788,12 @@ class HealthScorer:
             factors["partnerships"] = partnership_score
             score += partnership_score
 
-        weighted_score = (score / 100) * self.weights["utility"] * 100
+        score = min(100.0, max(0.0, score))
+        weighted_score = score * self.weights["utility"]
 
         return CategoryScore(
             category="utility",
-            score=min(100, max(0, score)),
+            score=score,
             weight=self.weights["utility"],
             weighted_score=weighted_score,
             factors=factors,

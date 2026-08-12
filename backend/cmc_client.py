@@ -101,66 +101,6 @@ class CMCClient:
                 return platform.get("token_address", "")
         return ""
 
-    def _estimate_exchanges(self, coin: Dict[str, Any], market_cap: float, volume: float) -> tuple:
-        """
-        Estimate exchange presence based on market cap and volume
-        Returns: (list of exchanges, count)
-        """
-        exchanges = []
-
-        # Top tier coins (market cap > $10B) - on all major exchanges
-        if market_cap > 10_000_000_000:
-            exchanges = ["Binance", "Coinbase", "Kraken", "OKX", "Bybit", "KuCoin"]
-            # Check if it's an ETH token - also on DEXes
-            platform = coin.get("platform")
-            if platform and "Ethereum" in platform.get("name", ""):
-                exchanges.extend(["Uniswap", "SushiSwap"])
-
-        # Large caps ($1B - $10B) - major CEXes + some DEXes
-        elif market_cap > 1_000_000_000:
-            exchanges = ["Binance", "Coinbase", "OKX", "Bybit"]
-            platform = coin.get("platform")
-            if platform and "Ethereum" in platform.get("name", ""):
-                exchanges.extend(["Uniswap"])
-
-        # Mid caps ($100M - $1B) - multiple CEXes + DEXes
-        elif market_cap > 100_000_000:
-            exchanges = ["Binance", "OKX", "KuCoin"]
-            platform = coin.get("platform")
-            if platform:
-                if "Ethereum" in platform.get("name", ""):
-                    exchanges.extend(["Uniswap", "SushiSwap"])
-                elif "BNB" in platform.get("name", ""):
-                    exchanges.extend(["PancakeSwap"])
-
-        # Small caps ($10M - $100M) - few CEXes, mostly DEXes
-        elif market_cap > 10_000_000:
-            platform = coin.get("platform")
-            if platform:
-                if "Ethereum" in platform.get("name", ""):
-                    exchanges = ["Uniswap", "SushiSwap", "KuCoin"]
-                elif "BNB" in platform.get("name", ""):
-                    exchanges = ["PancakeSwap", "Gate.io"]
-                else:
-                    exchanges = ["Gate.io", "MEXC"]
-            else:
-                exchanges = ["Gate.io", "MEXC"]
-
-        # Micro caps (< $10M) - mostly DEXes only
-        else:
-            platform = coin.get("platform")
-            if platform:
-                if "Ethereum" in platform.get("name", ""):
-                    exchanges = ["Uniswap"]
-                elif "BNB" in platform.get("name", ""):
-                    exchanges = ["PancakeSwap"]
-                else:
-                    exchanges = ["DEX"]
-            else:
-                exchanges = ["Minor CEX"]
-
-        return (exchanges, len(exchanges))
-
     def _calculate_risk(self, coin: Dict[str, Any], quote: Dict[str, Any]) -> int:
         """Calculate risk score based on CMC data"""
         risk = 0
@@ -373,8 +313,9 @@ class CMCClient:
             if not address:
                 address = f"cmc_{coin.get('id')}"
 
-            # Get exchange info
-            exchanges, exchange_count = self._estimate_exchanges(coin, market_cap, volume)
+            # num_market_pairs is real CMC data; never invent exchange
+            # names or liquidity figures in a due-diligence tool
+            market_pairs = coin.get("num_market_pairs")
 
             results.append({
                 "symbol": coin.get("symbol", ""),
@@ -383,14 +324,13 @@ class CMCClient:
                 "priceUsd": str(quote.get("price", 0)),
                 "priceChange24h": round(price_change, 2),
                 "volume24h": int(volume),
-                "liquidity": int(volume * 0.2),  # Estimate
+                "liquidity": None,  # not provided by CMC listings; fetched per-token from DexScreener
                 "totalSupply": int(coin.get("total_supply", 0)) if coin.get("total_supply") else None,
                 "circulatingSupply": int(coin.get("circulating_supply", 0)) if coin.get("circulating_supply") else None,
                 "marketCap": int(market_cap),
                 "fdv": int(quote.get("fully_diluted_market_cap", 0)),
-                "exchanges": exchanges,
-                "exchangeCount": exchange_count,
-                "pairCount": exchange_count,
+                "exchangeCount": market_pairs,
+                "pairCount": market_pairs,
                 "chain": chain,
                 "riskScore": self._calculate_risk(coin, quote),
                 "cmcRank": coin.get("cmc_rank", 999)

@@ -8,6 +8,7 @@ and populating the corresponding metrics dataclass.
 import logging
 import requests
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 import time
@@ -468,66 +469,122 @@ class DexScreenerFetcher(DataFetcher):
 # SECURITY DATA FETCHERS
 # ============================================================================
 
-class GoPolusSecurityFetcher(DataFetcher):
-    """Fetch security data from GoPlus Security API (free)"""
+@dataclass
+class GoPlusData:
+    """Parsed GoPlus token_security response, routed to the metrics each
+    signal belongs to. Trading-safety flags (honeypot, taxes) live on
+    LiquidityMetrics so the scorer's honeypot penalty actually fires."""
+    security: SecurityMetrics
+    liquidity: LiquidityMetrics
+    onchain: OnChainMetrics
+
+
+class GoPlusSecurityFetcher(DataFetcher):
+    """Fetch contract security data from GoPlus Security API (free)"""
 
     BASE_URL = "https://api.gopluslabs.io/api/v1/token_security"
 
-    def fetch(self, contract: str, chain: str = "ethereum") -> Optional[SecurityMetrics]:
-        """Fetch security metrics from GoPlus"""
+    CHAIN_IDS = {
+        "ethereum": "1",
+        "bsc": "56",
+        "polygon": "137"
+    }
+
+    def fetch(self, contract: str, chain: str = "ethereum") -> Optional[GoPlusData]:
+        """Fetch and parse token security data from GoPlus"""
         cache_key = f"goplus_{contract}_{chain}"
         cached = self._get_cached(cache_key)
         if cached:
             return cached
 
-        # Map chain to GoPlus chain ID
-        chain_map = {
-            "ethereum": "1",
-            "bsc": "56",
-            "polygon": "137"
-        }
-        chain_id = chain_map.get(chain.lower())
-
+        chain_id = self.CHAIN_IDS.get(chain.lower())
         if not chain_id:
             logger.warning(f"Unsupported chain for GoPlus: {chain}")
             return None
 
-        params = {
-            "contract_addresses": contract,
-            "chain_id": chain_id
-        }
+        # GoPlus takes the chain id as a path segment; as a query param it 404s
+        params = {"contract_addresses": contract}
 
-        data = self._request_with_retry(self.BASE_URL, params=params)
+        data = self._request_with_retry(f"{self.BASE_URL}/{chain_id}", params=params)
         if not data or "result" not in data:
             return None
 
+        result = data["result"].get(contract.lower())
+        if not result:
+            return None
+
         try:
-            result = data["result"].get(contract.lower(), {})
-
-            vulnerabilities = []
-            if result.get("is_honeypot") == "1":
-                vulnerabilities.append("Honeypot detected")
-            if result.get("is_proxy") == "1":
-                vulnerabilities.append("Proxy contract")
-            if result.get("is_mintable") == "1":
-                vulnerabilities.append("Mintable")
-            if result.get("can_take_back_ownership") == "1":
-                vulnerabilities.append("Can take back ownership")
-            if result.get("hidden_owner") == "1":
-                vulnerabilities.append("Hidden owner")
-            if result.get("selfdestruct") == "1":
-                vulnerabilities.append("Self-destruct function")
-
-            metrics = SecurityMetrics(
-                known_vulnerabilities=vulnerabilities,
-            )
-
-            self._set_cache(cache_key, metrics)
-            return metrics
-
+            parsed = self.parse_result(result, contract=contract, chain=chain)
+            self._set_cache(cache_key, parsed)
+            return parsed
         except Exception as e:
             logger.error(f"Error parsing GoPlus data: {e}")
             return None
+
+    def parse_result(
+        self,
+        result: Dict[str, Any],
+        contract: str = "",
+        chain: str = "ethereum"
+    ) -> GoPlusData:
+        """Parse a GoPlus token_security result dict (values are "0"/"1" strings)."""
+
+        def flag(key: str) -> Optional[bool]:
+            value = result.get(key)
+            if value is None or value == "":
+                return None
+            return value == "1"
+
+        def pct(key: str) -> Optional[float]:
+            """GoPlus taxes are 0-1 fractions; convert to percent."""
+            value = result.get(key)
+            if value in (None, ""):
+                return None
+            try:
+                return float(value) * 100
+            except (TypeError, ValueError):
+                return None
+
+        honeypot = flag("is_honeypot")
+        cannot_sell_all = flag("cannot_sell_all")
+
+        liquidity = LiquidityMetrics(
+            honeypot_risk=honeypot,
+            can_sell=(not (honeypot or cannot_sell_all))
+            if (honeypot is not None or cannot_sell_all is not None) else None,
+            buy_tax=pct("buy_tax"),
+            sell_tax=pct("sell_tax"),
+        )
+
+        onchain = OnChainMetrics(
+            contract_address=contract,
+            chain=chain,
+            source_verified=flag("is_open_source"),
+            proxy_contract=flag("is_proxy"),
+            mintable=flag("is_mintable"),
+            blacklist_function=flag("is_blacklisted"),
+            owner_address=result.get("owner_address") or None,
+        )
+        holder_count = result.get("holder_count")
+        if holder_count:
+            try:
+                onchain.holders_count = int(holder_count)
+            except (TypeError, ValueError):
+                pass
+
+        vulnerabilities = []
+        if flag("can_take_back_ownership"):
+            vulnerabilities.append("Owner can take back ownership")
+        if flag("hidden_owner"):
+            vulnerabilities.append("Hidden owner")
+        if flag("selfdestruct"):
+            vulnerabilities.append("Self-destruct function present")
+        if flag("external_call"):
+            vulnerabilities.append("External call risk")
+
+        security = SecurityMetrics(known_vulnerabilities=vulnerabilities)
+
+        return GoPlusData(security=security, liquidity=liquidity, onchain=onchain)
 
 
 # ============================================================================
@@ -571,14 +628,16 @@ class GitHubFetcher(DataFetcher):
             since_30d = (datetime.now() - timedelta(days=30)).isoformat()
             since_90d = (datetime.now() - timedelta(days=90)).isoformat()
 
+            # per_page=100 — the default page size of 30 silently capped the
+            # commit counts and made the ">50 commits" scoring branch unreachable
             commits_30d = self._request_with_retry(
                 commits_url,
-                params={"since": since_30d},
+                params={"since": since_30d, "per_page": 100},
                 headers=self.headers
             )
             commits_90d = self._request_with_retry(
                 commits_url,
-                params={"since": since_90d},
+                params={"since": since_90d, "per_page": 100},
                 headers=self.headers
             )
 
@@ -645,7 +704,7 @@ class DataFetcherRegistry:
 
     def register_security_fetchers(self):
         """Register security data fetchers"""
-        self.fetchers["goplus"] = GoPolusSecurityFetcher()
+        self.fetchers["goplus"] = GoPlusSecurityFetcher()
 
     def register_social_fetchers(self, github_token: Optional[str] = None):
         """Register social media fetchers"""
