@@ -48,7 +48,7 @@ function TrendingApp() {
         setError(`No ${filter} tokens available right now. The API may be rate-limited or returning no data. Try refreshing in a few minutes.`)
       }
     } catch (err) {
-      setError(`Failed to load ${filter} tokens: ${err.message}. Make sure backend is running on port 8001.`)
+      setError(`Failed to load ${filter} tokens: ${err.message}. Make sure backend is running on port 8000.`)
       console.error(`${filter} error:`, err)
     } finally {
       setLoading(false)
@@ -118,19 +118,26 @@ function TrendingApp() {
 
       console.log('Analysis response:', response.data)
 
-      // Create a token object from the response
+      // Map the comprehensive-health response (metrics grouped by category).
+      // overall_score is a HEALTH score (high = good); the table shows RISK
+      // (high = bad), so invert it.
+      const market = response.data.metrics?.market || {}
+      const liquidity = response.data.metrics?.liquidity || {}
+      const onchain = response.data.metrics?.onchain || {}
       const analyzedToken = {
-        symbol: response.data.symbol || contract.trim(),
-        name: response.data.name || 'Unknown Token',
+        symbol: market.symbol || contract.trim(),
+        name: market.name || 'Unknown Token',
         address: contract.trim(),
-        priceUsd: response.data.price_usd || 0,
-        priceChange24h: response.data.price_change_24h || 0,
-        volume24h: response.data.volume_24h || 0,
-        liquidity: response.data.liquidity || 0,
-        circulatingSupply: response.data.circulating_supply || 0,
-        totalSupply: response.data.total_supply || 0,
-        exchanges: response.data.exchanges || [],
-        riskScore: response.data.overall_score || 0
+        priceUsd: market.price_usd || 0,
+        priceChange24h: market.price_change_24h ?? 0,
+        volume24h: market.volume_24h || 0,
+        liquidity: liquidity.total_liquidity_usd ?? null,
+        circulatingSupply: onchain.circulating_supply || 0,
+        totalSupply: onchain.total_supply || 0,
+        pairCount: market.exchanges_listed ?? null,
+        riskScore: response.data.overall_score != null
+          ? Math.round(100 - response.data.overall_score)
+          : null
       }
 
       // Add to trending list temporarily at the top
@@ -197,7 +204,7 @@ function TrendingApp() {
       <div className="header">
         <div className="header-content">
           <div>
-            <h1>TokenHealth</h1>
+            <h1>Token Sentry</h1>
             <p>Real-time Token Due Diligence</p>
           </div>
         </div>
@@ -278,7 +285,7 @@ function TrendingApp() {
               <ul>
                 <li>API rate limiting</li>
                 <li>Network connectivity issues</li>
-                <li>Backend not running (check port 8001)</li>
+                <li>Backend not running (check port 8000)</li>
               </ul>
               <button className="btn btn-secondary" onClick={loadTokens}>
                 Retry
@@ -297,7 +304,7 @@ function TrendingApp() {
                       <th className="right">Volume (24h)</th>
                       <th className="right">Liquidity</th>
                       <th className="right">Supply</th>
-                      <th>Exchanges</th>
+                      <th className="right">Markets</th>
                       <th className="right">Risk</th>
                     </tr>
                   </thead>
@@ -342,17 +349,10 @@ function TrendingApp() {
                         <td className="right">
                           <span className="supply">{formatSupply(token.circulatingSupply || token.totalSupply)}</span>
                         </td>
-                        <td>
-                          <div className="exchanges">
-                            {token.exchanges.slice(0, 3).map((ex, i) => (
-                              <span key={i} className="exchange-badge">
-                                {ex.replace('_', ' ')}
-                              </span>
-                            ))}
-                            {token.exchanges.length > 3 && (
-                              <span className="exchange-badge">+{token.exchanges.length - 3}</span>
-                            )}
-                          </div>
+                        <td className="right">
+                          <span className="pair-count">
+                            {token.pairCount ?? token.exchangeCount ?? '—'}
+                          </span>
                         </td>
                         <td className="right">
                           <span className={`risk-badge ${getRiskBadgeClass(token.riskScore)}`}>

@@ -103,8 +103,8 @@ function TokenExpandedRow({ token }) {
                 </div>
 
                 <div className="stat-item">
-                  <div className="stat-label">Exchanges</div>
-                  <div className="stat-value">{token.exchanges?.length || 0}</div>
+                  <div className="stat-label">Markets</div>
+                  <div className="stat-value">{token.pairCount ?? token.exchangeCount ?? 'N/A'}</div>
                 </div>
               </div>
 
@@ -118,21 +118,6 @@ function TokenExpandedRow({ token }) {
                 </div>
               )}
 
-              {/* Exchanges List */}
-              {token.exchanges && token.exchanges.length > 0 && (
-                <div className="exchanges-list">
-                  {token.exchanges.slice(0, 4).map((ex, i) => (
-                    <span key={i} className="exchange-tag">
-                      {ex.replace('_', ' ')}
-                    </span>
-                  ))}
-                  {token.exchanges.length > 4 && (
-                    <span className="exchange-tag more">
-                      +{token.exchanges.length - 4}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </div>
