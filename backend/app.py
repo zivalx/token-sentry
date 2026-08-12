@@ -173,6 +173,18 @@ async def run_comprehensive_analysis(
             for cs in health_data.health_score.category_scores
         ]
 
+        # Snapshot for score-over-time tracking — never blocks the response
+        try:
+            get_db().save_score(
+                address=contract,
+                chain=request.chain,
+                score=health_data.health_score.overall_score,
+                risk_level=health_data.health_score.risk_level.value,
+                confidence=health_data.health_score.confidence,
+            )
+        except Exception:
+            logger.warning(f"Failed to record score history for {contract}", exc_info=True)
+
         return ComprehensiveHealthResponse(
             overall_score=health_data.health_score.overall_score,
             risk_level=health_data.health_score.risk_level.value,
@@ -195,6 +207,17 @@ async def run_comprehensive_analysis(
         # internal errors must never leak to the browser
         logger.exception(f"Analysis failed for {contract}")
         raise HTTPException(status_code=500, detail="Analysis failed")
+
+
+@app.get("/health/history/{address}")
+async def score_history(address: str, chain: str = "ethereum", limit: int = 30):
+    """
+    Score snapshots recorded on each completed analysis, newest first.
+    History accrues on demand — a token has entries only if it was analyzed.
+    """
+    address = sanitize_address(address)
+    history = get_db().get_score_history(address, chain, limit)
+    return {"address": address, "chain": chain, "count": len(history), "history": history}
 
 
 @app.get("/tokens/search")

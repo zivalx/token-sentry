@@ -34,3 +34,27 @@ class TestCacheRoundtrip:
             db.get_token("0x" + "1" * 40, "ethereum")
             db.cleanup_expired()
             db.get_stats()
+
+
+class TestScoreHistory:
+    ADDR = "0x" + "9" * 40
+
+    def test_roundtrip_newest_first(self, db):
+        db.save_score(self.ADDR, "ethereum", 72.5, "low", 0.6)
+        db.save_score(self.ADDR, "ethereum", 68.0, "moderate", 0.55)
+        history = db.get_score_history(self.ADDR, "ethereum")
+        assert len(history) == 2
+        assert history[0]["score"] == 68.0          # newest first
+        assert history[0]["risk_level"] == "moderate"
+        assert history[1]["score"] == 72.5
+        assert all("created_at" in row for row in history)
+
+    def test_history_is_scoped_to_address_and_chain(self, db):
+        db.save_score(self.ADDR, "ethereum", 72.5, "low", 0.6)
+        assert db.get_score_history("0x" + "8" * 40, "ethereum") == []
+        assert db.get_score_history(self.ADDR, "bsc") == []
+
+    def test_limit(self, db):
+        for i in range(5):
+            db.save_score(self.ADDR, "ethereum", float(i), "low", 0.5)
+        assert len(db.get_score_history(self.ADDR, "ethereum", limit=3)) == 3

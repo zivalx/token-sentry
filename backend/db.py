@@ -77,6 +77,24 @@ class TokenDatabase:
             )
         """)
 
+        # Score history — one row per completed analysis (on-demand snapshots)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS score_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                address TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                score REAL NOT NULL,
+                risk_level TEXT NOT NULL,
+                confidence REAL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_score_history_token
+            ON score_history(address, chain, id)
+        """)
+
         # Create indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_trending_chain_expires
@@ -273,6 +291,36 @@ class TokenDatabase:
         if row:
             return json.loads(row[0])
         return None
+
+    def save_score(self, address: str, chain: str, score: float,
+                   risk_level: str, confidence: Optional[float] = None):
+        """Record one analysis snapshot for score-over-time tracking"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO score_history (address, chain, score, risk_level, confidence, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (address.lower(), chain, score, risk_level, confidence, _now_str()))
+        conn.commit()
+        conn.close()
+
+    def get_score_history(self, address: str, chain: str, limit: int = 30) -> List[Dict[str, Any]]:
+        """Return snapshots for a token, newest first"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT score, risk_level, confidence, created_at
+            FROM score_history
+            WHERE address = ? AND chain = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (address.lower(), chain, limit))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"score": r[0], "risk_level": r[1], "confidence": r[2], "created_at": r[3]}
+            for r in rows
+        ]
 
     def cleanup_expired(self):
         """Remove expired cache entries"""

@@ -8,6 +8,7 @@ function TokenDetailModal({ token, onClose }) {
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [history, setHistory] = useState([])
 
   useEffect(() => {
     if (token) {
@@ -32,6 +33,15 @@ function TokenDetailModal({ token, onClose }) {
         chain: token.chain || 'ethereum'
       })
       setAnalysis(response.data)
+
+      try {
+        const hist = await axios.get(
+          `${API_BASE}/health/history/${contractAddress}?chain=${token.chain || 'ethereum'}&limit=6`
+        )
+        setHistory(hist.data.history || [])
+      } catch {
+        setHistory([])
+      }
     } catch (err) {
       console.error('Analysis error:', err)
       setError(err.response?.data?.detail || err.message || 'Analysis failed')
@@ -134,6 +144,33 @@ function TokenDetailModal({ token, onClose }) {
                 <div className="modal-panel">
                   <h3>AI Summary</h3>
                   <p className="modal-summary">{analysis.summary}</p>
+                </div>
+              )}
+
+              {history.length > 1 && (
+                <div className="modal-panel">
+                  <h3>Score history</h3>
+                  {(() => {
+                    const prev = history[1]  // history[0] is this analysis
+                    const delta = analysis.overall_score - prev.score
+                    return (
+                      <p className="history-delta">
+                        {delta === 0 ? 'Unchanged' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)} points`} since
+                        the previous analysis ({prev.created_at})
+                      </p>
+                    )
+                  })()}
+                  <ul className="history-list">
+                    {history.map((row, idx) => (
+                      <li key={idx}>
+                        <span className="history-date">{row.created_at}</span>
+                        <span className="history-score" style={{ color: scoreColor(row.score) }}>
+                          {row.score.toFixed(1)}
+                        </span>
+                        <span className="history-risk">{row.risk_level.replace('_', ' ')}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>

@@ -93,3 +93,51 @@ class TestCorsConfig:
         allows_all = "*" in cors.kwargs.get("allow_origins", [])
         credentials = cors.kwargs.get("allow_credentials", False)
         assert not (allows_all and credentials)
+
+
+class TestScoreHistory:
+    VALID_ADDR = "0x" + "9" * 40
+
+    @pytest.fixture
+    def tmp_db(self, tmp_path, monkeypatch):
+        from db import TokenDatabase
+        database = TokenDatabase(str(tmp_path / "history.db"))
+        monkeypatch.setattr(app_module, "get_db", lambda: database)
+        return database
+
+    def test_history_endpoint_returns_snapshots(self, tmp_db):
+        tmp_db.save_score(self.VALID_ADDR, "ethereum", 72.5, "low", 0.6)
+        response = client.get(f"/health/history/{self.VALID_ADDR}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 1
+        assert body["history"][0]["score"] == 72.5
+
+    def test_history_endpoint_validates_address(self, tmp_db):
+        assert client.get("/health/history/garbage").status_code == 400
+
+    def test_successful_analysis_records_a_snapshot(self, tmp_db, monkeypatch):
+        from health_models import TokenHealthData, MarketMetrics
+        from health_scorer import HealthScorer
+
+        data = TokenHealthData(
+            contract_address=self.VALID_ADDR,
+            chain="ethereum",
+            market=MarketMetrics(symbol="X", market_cap=500_000_000, volume_24h=50_000_000),
+        )
+        data.health_score = HealthScorer().score_token(data)
+
+        class FakePipeline:
+            @classmethod
+            def from_env(cls):
+                return cls()
+
+            def analyze_token(self, *args, **kwargs):
+                return data
+
+        monkeypatch.setattr(app_module, "TokenHealthPipeline", FakePipeline)
+        response = client.post("/health", json={"contract": self.VALID_ADDR})
+        assert response.status_code == 200
+        history = tmp_db.get_score_history(self.VALID_ADDR, "ethereum")
+        assert len(history) == 1
+        assert history[0]["score"] == data.health_score.overall_score

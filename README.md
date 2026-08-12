@@ -10,6 +10,8 @@
 
 - **Health scoring** — weighted 0-100 score across up to 7 categories (market, on-chain, liquidity, security, social, team, utility). Categories with no fetched data are excluded from the score and reported through a `confidence` / `data_completeness` pair — missing data is never scored as "neutral".
 - **Honeypot & contract-safety checks** — GoPlus security flags (honeypot, can't-sell, hidden owner, taxes) feed directly into the scoring.
+- **Holder & liquidity-lock analysis** — top-holder concentration and LP lock percentages (lockers/burns) from GoPlus, graded honestly: a 5%-locked pool is flagged, not praised.
+- **Score history** — every completed analysis records a snapshot; `/health/history/{address}` and the report modal show score-over-time.
 - **Token discovery** — trending / newest / top-gainer lists from CoinMarketCap, with a keyless CoinGecko fallback for trending; SQLite caching (10-min TTL, stale-cache fallback).
 - **Ticker resolution** — analyze by ticker (`PEPE`) or contract address; resolution via CoinGecko with DexScreener fallback.
 - **AI summaries (optional)** — Claude-generated analyst summary when an `ANTHROPIC_API_KEY` is configured.
@@ -76,6 +78,7 @@ npm run dev                       # http://localhost:3000, proxies /api to :8000
 | `/health/status` | GET | Health check, configured data sources, cache stats |
 | `/health` | POST | Analyze a token (alias for `/health/comprehensive`) |
 | `/health/comprehensive` | POST | Full 7-category analysis. Query params: `include_llm`, `github_repo` |
+| `/health/history/{address}` | GET | Score snapshots from past analyses, newest first (`?chain=&limit=`) |
 | `/tokens/trending` | GET | Trending tokens (`?chain=ethereum&limit=20`) |
 | `/tokens/newest` | GET | Recently added tokens |
 | `/tokens/gainers` | GET | Top 24h gainers |
@@ -155,11 +158,10 @@ token-sentry/
 
 ## Roadmap
 
-- [ ] Holder-concentration data (requires a paid explorer tier or Transfer-event indexing — currently reported as unavailable, not guessed)
-- [ ] Liquidity-lock detection (locker contracts)
 - [ ] Multi-chain expansion (Arbitrum, Base)
-- [ ] Historical score tracking
-- [ ] Social metrics (Twitter/Telegram APIs)
+- [ ] Scheduled re-scoring (history currently accrues on demand)
+- [ ] Score-history sparkline in the report modal
+- [ ] Social metrics beyond GitHub (Twitter/Telegram APIs are paid/gated — parked rather than faked)
 
 ## Contributing
 

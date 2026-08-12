@@ -1296,3 +1296,39 @@ td.right {
 .full-report-btn {
   margin-top: 1rem;
 }
+
+/* Score history */
+.history-delta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.6rem;
+}
+
+.history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.history-list li {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+
+.history-date {
+  color: var(--text-tertiary);
+  font-family: monospace;
+  min-width: 11.5rem;
+}
+
+.history-score {
+  font-weight: 600;
+}
+
+.history-risk {
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}

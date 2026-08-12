@@ -28,6 +28,14 @@ Rebuild after a full code review. Theme: the tool must never lie — no fabricat
 - README rewritten to describe the actual product; added `CLAUDE.md` (AI-assist context) and `backend/.env.example`.
 
 ### Added
+- Holder concentration (top 1/3/10 shares) and liquidity-lock percentages
+  extracted from the GoPlus response we already fetch — zero new API calls;
+  lock scoring graded by percentage, and unknown taxes no longer score as
+  "no taxes"
+- Score history: every completed analysis records a snapshot (SQLite);
+  `GET /health/history/{address}` + score-over-time in the report modal
+- Keyless-mode UX: newest/gainers tabs explain the missing CMC key instead
+  of a generic empty state
 - Keyless trending: `/tokens/trending` falls back to CoinGecko when no CMC
   key is configured (honest fields only; cached 10 min in SQLite)
 - The full-report modal is reachable (a "Full report" button in the expanded
