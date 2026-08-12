@@ -1,412 +1,170 @@
-# TokenHealth
+# Token Sentry
 
-**TokenHealth** is a token due-diligence system that builds an on-chain knowledge graph, computes risk heuristics, and produces an explainable health score with a short report for ERC-20/ERC-721 tokens.
+**Token Sentry** is a token due-diligence tool for ERC-20 tokens on Ethereum, BSC, Polygon, Arbitrum, and Base. It aggregates market, on-chain, liquidity, security, and development data from public APIs and produces an explainable 0-100 health score across weighted categories — plus a trending/newest/gainers dashboard.
 
 ## Disclaimer
 
-**IMPORTANT:** This tool is for research and educational purposes only. It is NOT financial advice. Always verify on-chain data independently and conduct your own due diligence before making any investment decisions.
+**IMPORTANT:** This tool is for research and educational purposes only. It is NOT financial advice. Scores are heuristics computed from public API data, which may be incomplete or stale. Always verify on-chain data independently before making any decisions.
 
-## Features
+## What it does
 
-- **Risk Scoring**: Computes a 0-100 risk score based on multiple on-chain heuristics
-- **Knowledge Graph**: Visualizes relationships between token, holders, liquidity pools, and owner
-- **Explainable Results**: Shows which heuristics contributed to the score with detailed reasons
-- **LLM-Powered Summary**: Generates human-readable summaries, top risks, and next verification steps
-- **Demo Mode**: Run without API keys using seed data for testing and demonstrations
-- **Docker Support**: Fully containerized for easy deployment
+- **Health scoring** — weighted 0-100 score across up to 7 categories (market, on-chain, liquidity, security, social, team, utility). Categories with no fetched data are excluded from the score and reported through a `confidence` / `data_completeness` pair — missing data is never scored as "neutral".
+- **Honeypot & contract-safety checks** — GoPlus security flags (honeypot, can't-sell, hidden owner, taxes) feed directly into the scoring.
+- **Holder & liquidity-lock analysis** — top-holder concentration and LP lock percentages (lockers/burns) from GoPlus, graded honestly: a 5%-locked pool is flagged, not praised.
+- **Score history** — every completed analysis records a snapshot; `/health/history/{address}` and the report modal show score-over-time.
+- **Token discovery** — trending / newest / top-gainer lists from CoinMarketCap, with a keyless CoinGecko fallback for trending; SQLite caching (10-min TTL, stale-cache fallback).
+- **Ticker resolution** — analyze by ticker (`PEPE`) or contract address; resolution via CoinGecko with DexScreener fallback.
+- **AI summaries (optional)** — Claude-generated analyst summary when an `ANTHROPIC_API_KEY` is configured.
 
-## Architecture
+### Data honesty
 
-### Backend (FastAPI)
-- **Framework**: Python FastAPI
-- **Graph**: NetworkX for building knowledge graphs
-- **Persistence**: SQLite-ready (currently in-memory for prototype)
-- **LLM Agent**: Deterministic fallback for demo mode, extensible for Claude/GPT integration
+Every number shown is fetched from a source, never inferred. Fields no source provides (e.g. per-token liquidity in list views) are shown as `N/A` — earlier versions estimated them, which is exactly what a due-diligence tool must not do.
 
-### Frontend (React + Vite)
-- **Framework**: React 18 with Vite
-- **Graph Visualization**: Cytoscape.js with cose-bilkent layout
-- **Styling**: Custom CSS with gradient backgrounds
-- **API Communication**: Axios
+## Data sources
 
-### Data Sources (Planned)
-- Etherscan API: Contract verification, token transactions
-- Covalent: Token balances, top holders
-- The Graph: DEX liquidity pairs
-- Alchemy/Infura: RPC calls for on-chain data
-- CoinGecko: Market data (optional)
+| Source | Used for | Key required |
+|---|---|---|
+| CoinGecko | Market data, ticker resolution, trending fallback | No (free tier) |
+| DexScreener | Liquidity/pairs, ticker fallback | No |
+| GoPlus Security | Honeypot, taxes, contract flags | No |
+| CoinMarketCap | Trending/newest/gainers lists (richer than the fallback) | Yes (free tier, 333 calls/day) |
+| Etherscan V2 (ETH/BSC/Polygon) | Contract verification, creation date | Yes (free tier) |
+| Alchemy | Supplementary on-chain data | Yes (free tier) |
+| GitHub | Development activity | Optional (higher rate limits) |
+| Anthropic | AI summaries | Yes (only for `include_llm`) |
 
-**Note**: Current prototype uses seed data in demo mode. Live API integration requires API keys.
+All keys are optional — the app degrades gracefully to the keyless sources. See [API_SETUP.md](API_SETUP.md) for step-by-step key setup.
 
-## Quick Start
+## Quick start
 
-### Prerequisites
-- Docker & Docker Compose
-- Git
+### Docker (recommended)
 
-### Run with Docker (Recommended)
+```bash
+git clone https://github.com/zivalx/token-sentry.git
+cd token-sentry
+cp backend/.env.example backend/.env   # optional: add your API keys
+docker-compose up --build
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd token_dd
-   ```
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API docs (Swagger): http://localhost:8000/docs
 
-2. **Start the services**
-   ```bash
-   DEMO_MODE=true docker-compose up --build
-   ```
+### Local development
 
-3. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-4. **Try it out**
-   - Click "Load Sample" to see a pre-computed analysis
-   - Or enter any contract address (will use demo data in demo mode)
-
-### Run Locally (Development)
-
-#### Backend
+**Backend**
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements-dev.txt
+uvicorn app:app --reload          # http://localhost:8000
 ```
 
-Backend will run on http://localhost:8000
-
-#### Frontend
+**Frontend**
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                       # http://localhost:3000, proxies /api to :8000
 ```
 
-Frontend will run on http://localhost:3000
+## API
 
-## API Endpoints
+| Endpoint | Method | Description |
+|---|---|---|
+| `/` | GET | Service info |
+| `/health/status` | GET | Health check, configured data sources, cache stats |
+| `/health` | POST | Analyze a token (alias for `/health/comprehensive`) |
+| `/health/comprehensive` | POST | Full 7-category analysis. Query params: `include_llm`, `github_repo` |
+| `/health/history/{address}` | GET | Score snapshots from past analyses, newest first (`?chain=&limit=`) |
+| `/tokens/trending` | GET | Trending tokens (`?chain=ethereum&limit=20`) |
+| `/tokens/newest` | GET | Recently added tokens |
+| `/tokens/gainers` | GET | Top 24h gainers |
+| `/tokens/search` | GET | Search tokens by name/ticker (`?query=...`) |
+| `/tokens/resolve` | POST | Resolve ticker to contract address |
 
-### `GET /`
-Health check and service information
+**Analysis request body** (`/health`, `/health/comprehensive`):
 
-### `GET /health/status`
-Returns service status and available data sources
-
-### `GET /health/sample`
-Returns pre-computed sample analysis with safe token profile
-
-### `POST /health/demo`
-Analyzes token using seed data
-
-**Request Body:**
 ```json
 {
-  "contract": "0x1234567890123456789012345678901234567890",
+  "contract": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
   "chain": "ethereum"
 }
 ```
 
-**Response:**
+`contract` accepts a `0x` address or a ticker symbol; `ticker` may be used instead. Invalid addresses return `400`.
+
+**Response** (abridged):
+
 ```json
 {
-  "risk_score": 65.0,
-  "summary": [
-    "DEMO shows MODERATE RISK signals (65/100)",
-    "Primary concerns: top holder concentration, admin privileges.",
-    "Top holder owns 35.0% of supply",
-    "Verify on-chain data independently before making decisions."
+  "overall_score": 72.4,
+  "risk_level": "low",
+  "confidence": 0.61,
+  "data_completeness": 0.55,
+  "category_scores": [
+    {"category": "market", "score": 85.0, "weight": 0.2, "issues": [], "strengths": ["Large market cap ($1B+)"]}
   ],
-  "top_risks": [
-    "Top holder owns 35.0% of supply",
-    "Owner has privileged functions (mint, pause, upgrade, or setFee).",
-    "Low liquidity pool ($8,500)."
-  ],
-  "next_checks": [
-    "Check if owner address is a multisig or DAO contract.",
-    "Verify liquidity lock status and expiration date.",
-    "Investigate top holder addresses (exchange, team, or whale)."
-  ],
-  "reasons": [...],
-  "graph": {
-    "nodes": [...],
-    "edges": [...]
-  },
-  "metrics": {...}
+  "red_flags": [],
+  "yellow_flags": ["[ONCHAIN] Owner has admin privileges"],
+  "green_flags": ["[LIQUIDITY] Strong liquidity ($4,200,000)"],
+  "recommendations": ["..."],
+  "metrics": {"market": {}, "onchain": {}, "liquidity": {}, "security": {}}
 }
 ```
 
-### `POST /health`
-Analyze token (requires API keys in production, uses demo data if `demo=true` or `DEMO_MODE=true`)
+`overall_score` is a **health** score: higher = healthier. `risk_level` maps 80-100 → very_low … 0-20 → critical.
 
-## Risk Heuristics
+## Scoring model
 
-TokenHealth evaluates tokens using the following heuristics:
+Weights: market 20% · on-chain 15% · liquidity 15% · security 15% · utility 15% · social 10% · team 10%.
 
-| Heuristic | Risk Impact | Description |
-|-----------|-------------|-------------|
-| `unverified_source_code` | +25 | Contract source code not verified on block explorer |
-| `admin_privileges` | +20 | Owner has mint, pause, upgrade, or setFee functions |
-| `top_holder_concentration` | +10 to +55 | High percentage held by top holders (1/3/10) |
-| `recent_large_transfers` | +15 | Large transfer (>5% supply) in last 30 days |
-| `minted_recently` | +30 | Significant minting (>5% supply) in last 30 days |
-| `suspicious_tx_pattern` | +15 | Unusual transaction patterns (many small transfers) |
-| `low_liquidity` | +20 | Liquidity pool < $10,000 |
-| `low_holder_count` | +10 | Fewer than 100 token holders |
-| `honeypot_check` | +50 | Failed buy/sell simulation (placeholder) |
-| `liquidity_locked` | -30 | Liquidity locked in verified locker (safety factor) |
-| `audit_present` | -20 | Audited by known auditor (safety factor) |
-
-**Risk Score Interpretation:**
-- **0-20**: Low Risk
-- **20-40**: Low-Moderate Risk
-- **40-70**: Moderate Risk
-- **70-100**: High Risk
+Each category starts at 50 and moves with evidence (e.g. verified source +20, honeypot −50, unverified contract −25, locked liquidity up to +30). Categories with **no fetched data are skipped** and the remaining weights are renormalized; `confidence` reflects how much data backed the score. The full factor breakdown is returned in `category_scores[].factors` so every score is auditable.
 
 ## Testing
 
-### Run Backend Tests
-
 ```bash
 cd backend
-pytest test_app.py -v
+venv/bin/pytest tests -v        # or: ./run.sh test
 ```
 
-**Test Coverage:**
-- Address validation and sanitization
-- Heuristics calculations (edge cases)
-- Graph builder node/edge counts
-- API endpoints (sample, demo, analyze)
-- Risk score bounds (0-100)
+The suite covers the scoring engine (branch reachability, honeypot wiring, empty-category handling), address validation, API error hygiene, GoPlus response parsing, cache behavior, and the no-fabricated-data guarantees.
 
-## Project Structure
+## Project structure
 
 ```
-token_dd/
+token-sentry/
 ├── backend/
-│   ├── app.py                 # FastAPI application
-│   ├── heuristics.py          # Risk scoring engine
-│   ├── graph_builder.py       # Knowledge graph builder
-│   ├── llm_agent.py           # LLM agent (with fallback)
-│   ├── test_app.py            # Unit & integration tests
-│   ├── requirements.txt       # Python dependencies
-│   ├── Dockerfile             # Backend container
-│   └── seed_data/
-│       ├── demo.json          # Demo token data
-│       └── sample.json        # Sample safe token
+│   ├── app.py                    # FastAPI app: endpoints, validation, CORS
+│   ├── token_health_pipeline.py  # Orchestration: fetch → merge → score → summarize
+│   ├── health_scorer.py          # 7-category weighted scoring engine
+│   ├── health_models.py          # Dataclasses for all metrics + score types
+│   ├── data_fetchers.py          # Per-source fetchers (CoinGecko, Etherscan, GoPlus, ...)
+│   ├── cmc_client.py             # CoinMarketCap client for list endpoints
+│   ├── ticker_resolver.py        # Ticker → contract address resolution
+│   ├── db.py                     # SQLite cache for list endpoints
+│   ├── tests/                    # pytest suite
+│   └── requirements.txt          # runtime deps (requirements-dev.txt for tests)
 ├── frontend/
-│   ├── src/
-│   │   ├── App.jsx            # Main React component
-│   │   ├── main.jsx           # Entry point
-│   │   └── index.css          # Styles
-│   ├── index.html             # HTML template
-│   ├── package.json           # Node dependencies
-│   ├── vite.config.js         # Vite configuration
-│   ├── nginx.conf             # Nginx config for production
-│   └── Dockerfile             # Frontend container
-├── docker-compose.yml         # Docker orchestration
-├── .gitignore
-└── README.md                  # This file
+│   └── src/
+│       ├── TrendingApp.jsx       # Main app: token lists + analyze search
+│       ├── TokenExpandedRow.jsx  # Inline risk/market details
+│       └── TokenDetailModal.jsx  # Detail modal
+├── docker-compose.yml            # backend :8000, frontend :3000
+└── CLAUDE.md                     # Context for AI-assisted development
 ```
 
-## Seed Data Format
+## Roadmap
 
-Create custom seed data files in `backend/seed_data/` for testing:
-
-```json
-{
-  "contract": "0x...",
-  "symbol": "TOKEN",
-  "name": "Token Name",
-  "total_supply": 1000000000,
-  "market_cap_usd": 500000,
-  "contract_verified": true,
-  "owner": "0x...",
-  "owner_has_admin": false,
-  "audited": true,
-  "honeypot_risk": false,
-  "holders": [
-    {
-      "address": "0x...",
-      "balance": 100000000
-    }
-  ],
-  "transfers": [
-    {
-      "from": "0x...",
-      "to": "0x...",
-      "value": 1000000,
-      "timestamp": 1700000000
-    }
-  ],
-  "liquidity": {
-    "pair": "0x...",
-    "liquidity_usd": 100000,
-    "locked": true,
-    "locker": "0x..."
-  }
-}
-```
-
-## LLM Agent Prompt Template
-
-The system uses this template for generating summaries (currently uses deterministic fallback in demo mode):
-
-```
-[SYSTEM]
-You are TokenHealth AGENT. Your job: given concise token metrics + graph summary,
-produce a 4-line human summary, top-3 risks, and 3 immediate checks.
-
-[USER]
-Token: {symbol} ({contract})
-Metrics:
-  total_supply: {total_supply}
-  top1_pct: {top1_pct}%
-  liquidity_usd: ${liquidity_usd}
-  ...
-
-Graph summary: {graph_summary}
-
-Instructions: produce JSON with fields:
-  - "summary" (array of 4 strings)
-  - "top_risks" (array of 3 strings)
-  - "next_checks" (array of 3 strings)
-```
-
-## Extending for Production
-
-### Add Live API Integration
-
-1. **Etherscan API**
-   ```python
-   import requests
-
-   def fetch_contract_info(address, api_key):
-       url = f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
-       response = requests.get(url)
-       return response.json()
-   ```
-
-2. **Environment Variables**
-   Create `.env` file:
-   ```
-   ETHERSCAN_API_KEY=your_key
-   COVALENT_API_KEY=your_key
-   ALCHEMY_API_KEY=your_key
-   ANTHROPIC_API_KEY=your_key  # For Claude LLM
-   DEMO_MODE=false
-   ```
-
-3. **Update `app.py`**
-   Replace seed data loading with live API calls when `DEMO_MODE=false`
-
-### Add LLM Integration
-
-Update `llm_agent.py`:
-
-```python
-import anthropic
-
-def _generate_llm_summary(self, ...):
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
-    message = client.messages.create(
-        model="claude-sonnet-4.5-20250929",
-        max_tokens=1024,
-        messages=[{
-            "role": "user",
-            "content": self._build_prompt(...)
-        }]
-    )
-
-    return self._parse_llm_response(message.content[0].text)
-```
-
-## Deployment
-
-### Deploy Backend (Cloud Run / Render)
-
-1. Push code to GitHub
-2. Connect to Cloud Run or Render
-3. Set environment variables
-4. Deploy from `backend/` directory
-
-### Deploy Frontend (Vercel / Netlify)
-
-1. Push code to GitHub
-2. Connect to Vercel or Netlify
-3. Set build command: `npm run build`
-4. Set output directory: `dist`
-5. Add environment variable: `VITE_API_BASE=https://your-backend-url.com`
-
-## Troubleshooting
-
-### Docker Issues
-
-**Problem**: Backend not starting
-```bash
-docker-compose logs backend
-```
-
-**Solution**: Check if port 8000 is already in use
-
-**Problem**: Frontend can't connect to backend
-```bash
-# Check network connectivity
-docker-compose exec frontend ping backend
-```
-
-**Solution**: Ensure both services are on the same Docker network
-
-### Development Issues
-
-**Problem**: CORS errors
-- Ensure backend CORS middleware allows frontend origin
-- Check `allow_origins` in `app.py`
-
-**Problem**: Graph not rendering
-- Check browser console for errors
-- Ensure cytoscape and layout libraries are loaded
-- Verify graph data structure matches expected format
+- [ ] Scheduled re-scoring (history currently accrues on demand)
+- [ ] Social metrics beyond GitHub (Twitter/Telegram APIs are paid/gated — parked rather than faked)
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run tests: `pytest backend/test_app.py`
-6. Submit a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md). TDD is the house rule: a bug fix starts with a failing test.
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Future Enhancements
-
-- [ ] Real-time on-chain data fetching
-- [ ] Support for multiple chains (BSC, Polygon, Arbitrum)
-- [ ] Social sentiment analysis (Twitter, Reddit)
-- [ ] Historical risk score tracking
-- [ ] Honeypot detection integration
-- [ ] Multi-token comparison
-- [ ] Export reports as PDF
-- [ ] WebSocket support for live updates
-- [ ] Advanced graph analysis (centrality, clustering)
-- [ ] Machine learning risk model
-
-## Support
-
-For issues, questions, or contributions:
-- Open an issue on GitHub
-- Check existing documentation
-- Review API docs at `/docs` endpoint
-
----
-
-Built with FastAPI, React, NetworkX, and Cytoscape.js
+MIT — see [LICENSE](LICENSE).

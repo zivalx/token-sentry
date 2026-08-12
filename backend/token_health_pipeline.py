@@ -11,7 +11,7 @@ Main orchestration pipeline that:
 import logging
 import os
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from health_models import (
@@ -145,19 +145,18 @@ class TokenHealthPipeline:
         # 3. Liquidity Data
         health_data.liquidity = self._fetch_liquidity_data(contract, chain)
 
-        # 4. Security Data
+        # 4. Security Data — GoPlus signals are routed to security, liquidity
+        # AND onchain metrics (honeypot/taxes belong to liquidity scoring)
         if fetch_security:
-            health_data.security = self._fetch_security_data(contract, chain)
+            self._fetch_and_merge_security_data(health_data, contract, chain)
 
         # 5. Social Data
         if fetch_social and github_repo:
             health_data.social = self._fetch_social_data(github_repo)
 
-        # 6. Team & Utility Data
-        # These typically require manual input or web scraping
-        # For now, we'll leave them as optional/manual
-        health_data.team = TeamMetrics()
-        health_data.utility = UtilityMetrics()
+        # 6. Team & Utility Data require manual input or web scraping.
+        # Left as None: the scorer must treat "not fetched" as absent,
+        # never as a neutral score.
 
         # ====================================================================
         # TRANSFORM PHASE: Enrich and normalize data
@@ -289,34 +288,59 @@ class TokenHealthPipeline:
 
         return None
 
-    def _fetch_security_data(
+    def _fetch_and_merge_security_data(
         self,
+        health_data: TokenHealthData,
         contract: str,
         chain: str
-    ) -> Optional[SecurityMetrics]:
-        """Fetch security data from available sources"""
-        metrics = SecurityMetrics()
+    ) -> None:
+        """Fetch GoPlus data and merge each signal into its category.
 
-        # GoPlus Security (free API)
-        if "goplus" in self.registry.list_fetchers():
-            fetcher = self.registry.get_fetcher("goplus")
-            try:
-                goplus_metrics = fetcher.fetch(contract, chain)
-                if goplus_metrics:
-                    # Merge metrics
-                    for key, value in vars(goplus_metrics).items():
-                        if value is not None:
-                            setattr(metrics, key, value)
-                    logger.info("Security data fetched from GoPlus")
-            except Exception as e:
-                logger.warning(f"GoPlus fetch failed: {e}")
+        Honeypot/tax flags go to liquidity metrics (where the scorer's
+        honeypot penalty lives); contract flags supplement onchain metrics;
+        vulnerability findings go to security metrics.
+        """
+        if "goplus" not in self.registry.list_fetchers():
+            return
+
+        fetcher = self.registry.get_fetcher("goplus")
+        try:
+            goplus = fetcher.fetch(contract, chain)
+        except Exception as e:
+            logger.warning(f"GoPlus fetch failed: {e}")
+            return
+
+        if not goplus:
+            return
+
+        if any(v not in (None, [], {}) for v in vars(goplus.security).values()):
+            health_data.security = goplus.security
+
+        # Merge liquidity flags without clobbering DexScreener data
+        if health_data.liquidity is None:
+            health_data.liquidity = goplus.liquidity
+        else:
+            self._merge_missing(health_data.liquidity, goplus.liquidity)
+
+        # Supplement onchain data (explorer data wins when present)
+        if health_data.onchain is None:
+            health_data.onchain = goplus.onchain
+        else:
+            self._merge_missing(health_data.onchain, goplus.onchain)
+
+        logger.info("Security data fetched from GoPlus")
 
         # Additional security sources could be added here:
         # - CertiK API (requires paid plan)
         # - Hacken API
         # - Manual audit database lookup
 
-        return metrics if any(vars(metrics).values()) else None
+    @staticmethod
+    def _merge_missing(target, source) -> None:
+        """Copy fields from source onto target only where target has no value."""
+        for key, value in vars(source).items():
+            if value is not None and getattr(target, key, None) is None:
+                setattr(target, key, value)
 
     def _fetch_social_data(
         self,
@@ -368,7 +392,7 @@ class TokenHealthPipeline:
                 health_data.raw_data["symbol"] = symbol
 
         # Add enrichment timestamp
-        health_data.raw_data["enriched_at"] = datetime.utcnow().isoformat()
+        health_data.raw_data["enriched_at"] = datetime.now(timezone.utc).isoformat()
 
     # ========================================================================
     # LLM INTEGRATION
@@ -405,7 +429,7 @@ Provide:
 Keep it concise and factual. Focus on the most critical information."""
 
             message = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-5",
                 max_tokens=500,
                 messages=[{"role": "user", "content": prompt}]
             )

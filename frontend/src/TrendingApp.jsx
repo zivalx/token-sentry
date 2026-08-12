@@ -10,14 +10,23 @@ function TrendingApp() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('trending')
+  const [chain, setChain] = useState('ethereum')
   const [contract, setContract] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [expandedToken, setExpandedToken] = useState(null)
   const [selectedToken, setSelectedToken] = useState(null)
+  const [cmcAvailable, setCmcAvailable] = useState(null)
 
   useEffect(() => {
     loadTokens()
-  }, [filter])
+  }, [filter, chain])
+
+  useEffect(() => {
+    // Newest/gainers need a CoinMarketCap key; trending has a keyless fallback.
+    axios.get(`${API_BASE}/health/status`)
+      .then(res => setCmcAvailable(Boolean(res.data?.data_sources?.coinmarketcap)))
+      .catch(() => setCmcAvailable(null))
+  }, [])
 
   const loadTokens = async () => {
     setLoading(true)
@@ -34,8 +43,7 @@ function TrendingApp() {
     const dataKey = filter // Response keys match filter names
 
     try {
-      console.log('Fetching from:', `${API_BASE}/tokens/${endpoint}?limit=20`)
-      const response = await axios.get(`${API_BASE}/tokens/${endpoint}?limit=20`)
+      const response = await axios.get(`${API_BASE}/tokens/${endpoint}?limit=20&chain=${chain}`)
       console.log(`${filter} response:`, response.data)
 
       const data = response.data?.[dataKey]
@@ -48,7 +56,7 @@ function TrendingApp() {
         setError(`No ${filter} tokens available right now. The API may be rate-limited or returning no data. Try refreshing in a few minutes.`)
       }
     } catch (err) {
-      setError(`Failed to load ${filter} tokens: ${err.message}. Make sure backend is running on port 8001.`)
+      setError(`Failed to load ${filter} tokens: ${err.message}. Make sure backend is running on port 8000.`)
       console.error(`${filter} error:`, err)
     } finally {
       setLoading(false)
@@ -113,24 +121,32 @@ function TrendingApp() {
       console.log('Analyzing token via API:', contract.trim())
       const response = await axios.post(`${API_BASE}/health/comprehensive`, {
         contract: contract.trim(),
-        chain: 'ethereum'
+        chain
       })
 
       console.log('Analysis response:', response.data)
 
-      // Create a token object from the response
+      // Map the comprehensive-health response (metrics grouped by category).
+      // overall_score is a HEALTH score (high = good); the table shows RISK
+      // (high = bad), so invert it.
+      const market = response.data.metrics?.market || {}
+      const liquidity = response.data.metrics?.liquidity || {}
+      const onchain = response.data.metrics?.onchain || {}
       const analyzedToken = {
-        symbol: response.data.symbol || contract.trim(),
-        name: response.data.name || 'Unknown Token',
+        symbol: market.symbol || contract.trim(),
+        name: market.name || 'Unknown Token',
         address: contract.trim(),
-        priceUsd: response.data.price_usd || 0,
-        priceChange24h: response.data.price_change_24h || 0,
-        volume24h: response.data.volume_24h || 0,
-        liquidity: response.data.liquidity || 0,
-        circulatingSupply: response.data.circulating_supply || 0,
-        totalSupply: response.data.total_supply || 0,
-        exchanges: response.data.exchanges || [],
-        riskScore: response.data.overall_score || 0
+        chain,
+        priceUsd: market.price_usd || 0,
+        priceChange24h: market.price_change_24h ?? 0,
+        volume24h: market.volume_24h || 0,
+        liquidity: liquidity.total_liquidity_usd ?? null,
+        circulatingSupply: onchain.circulating_supply || 0,
+        totalSupply: onchain.total_supply || 0,
+        pairCount: market.exchanges_listed ?? null,
+        riskScore: response.data.overall_score != null
+          ? Math.round(100 - response.data.overall_score)
+          : null
       }
 
       // Add to trending list temporarily at the top
@@ -197,7 +213,7 @@ function TrendingApp() {
       <div className="header">
         <div className="header-content">
           <div>
-            <h1>TokenHealth</h1>
+            <h1>Token Sentry</h1>
             <p>Real-time Token Due Diligence</p>
           </div>
         </div>
@@ -242,6 +258,18 @@ function TrendingApp() {
               {filter === 'trending' && '🔥 Trending Tokens'}
             </h2>
             <div className="trending-filters">
+              <select
+                className="chain-select"
+                value={chain}
+                onChange={(e) => setChain(e.target.value)}
+                title="Blockchain network"
+              >
+                <option value="ethereum">Ethereum</option>
+                <option value="bsc">BSC</option>
+                <option value="polygon">Polygon</option>
+                <option value="arbitrum">Arbitrum</option>
+                <option value="base">Base</option>
+              </select>
               <button
                 className={`filter-btn ${filter === 'trending' ? 'active' : ''}`}
                 onClick={() => setFilter('trending')}
@@ -271,19 +299,34 @@ function TrendingApp() {
               <p>Loading {filter} tokens...</p>
             </div>
           ) : trending.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">📊</div>
-              <h3>No {filter.charAt(0).toUpperCase() + filter.slice(1)} Tokens Available</h3>
-              <p>Unable to fetch {filter} data right now. This could be due to:</p>
-              <ul>
-                <li>API rate limiting</li>
-                <li>Network connectivity issues</li>
-                <li>Backend not running (check port 8001)</li>
-              </ul>
-              <button className="btn btn-secondary" onClick={loadTokens}>
-                Retry
-              </button>
-            </div>
+            filter !== 'trending' && cmcAvailable === false ? (
+              <div className="empty-state">
+                <div className="empty-icon">🔑</div>
+                <h3>Requires a CoinMarketCap API key</h3>
+                <p>
+                  The {filter} list comes from CoinMarketCap, which needs a (free) API key —
+                  the trending tab works without one.
+                </p>
+                <p>
+                  Get a key at coinmarketcap.com/api, set <code>CMC_API_KEY</code> in{' '}
+                  <code>backend/.env</code> (see <code>backend/.env.example</code>), and restart the backend.
+                </p>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">📊</div>
+                <h3>No {filter.charAt(0).toUpperCase() + filter.slice(1)} Tokens Available</h3>
+                <p>Unable to fetch {filter} data right now. This could be due to:</p>
+                <ul>
+                  <li>API rate limiting</li>
+                  <li>Network connectivity issues</li>
+                  <li>Backend not running (check port 8000)</li>
+                </ul>
+                <button className="btn btn-secondary" onClick={loadTokens}>
+                  Retry
+                </button>
+              </div>
+            )
           ) : (
             <div className="trending-table">
               <div className="table-wrapper">
@@ -297,7 +340,7 @@ function TrendingApp() {
                       <th className="right">Volume (24h)</th>
                       <th className="right">Liquidity</th>
                       <th className="right">Supply</th>
-                      <th>Exchanges</th>
+                      <th className="right">Markets</th>
                       <th className="right">Risk</th>
                     </tr>
                   </thead>
@@ -342,17 +385,10 @@ function TrendingApp() {
                         <td className="right">
                           <span className="supply">{formatSupply(token.circulatingSupply || token.totalSupply)}</span>
                         </td>
-                        <td>
-                          <div className="exchanges">
-                            {token.exchanges.slice(0, 3).map((ex, i) => (
-                              <span key={i} className="exchange-badge">
-                                {ex.replace('_', ' ')}
-                              </span>
-                            ))}
-                            {token.exchanges.length > 3 && (
-                              <span className="exchange-badge">+{token.exchanges.length - 3}</span>
-                            )}
-                          </div>
+                        <td className="right">
+                          <span className="pair-count">
+                            {token.pairCount ?? token.exchangeCount ?? '—'}
+                          </span>
                         </td>
                         <td className="right">
                           <span className={`risk-badge ${getRiskBadgeClass(token.riskScore)}`}>
@@ -361,7 +397,7 @@ function TrendingApp() {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <TokenExpandedRow token={token} />
+                        <TokenExpandedRow token={token} onFullReport={setSelectedToken} />
                       )}
                       </React.Fragment>
                       )

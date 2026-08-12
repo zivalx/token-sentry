@@ -6,7 +6,7 @@ Comprehensive data structures for holistic token health evaluation.
 
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -249,7 +249,7 @@ class TokenHealthScore:
     green_flags: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
     summary: Optional[str] = None
-    last_updated: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    last_updated: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 @dataclass
@@ -267,20 +267,25 @@ class TokenHealthData:
     health_score: Optional[TokenHealthScore] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
-    fetched_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, handling nested dataclasses"""
         return asdict(self)
 
-    def get_field_count(self) -> int:
-        """Count populated fields across all metrics"""
+    def get_field_count(self) -> tuple:
+        """Count populated fields across all metrics.
+
+        Metrics objects with no populated fields represent "nothing fetched"
+        and are excluded entirely, so they neither inflate nor deflate
+        completeness.
+        """
         count = 0
         total = 0
 
         for metrics_obj in [self.market, self.onchain, self.liquidity,
                            self.security, self.social, self.team, self.utility]:
-            if metrics_obj:
+            if metrics_obj and has_data(metrics_obj, ignore=IDENTITY_FIELDS):
                 for key, value in asdict(metrics_obj).items():
                     total += 1
                     if value is not None and value != [] and value != {}:
@@ -292,6 +297,24 @@ class TokenHealthData:
         """Calculate data completeness ratio"""
         populated, total = self.get_field_count()
         return populated / total if total > 0 else 0.0
+
+
+# Fields that identify a token rather than describe it — their presence alone
+# does not mean a category has real data.
+IDENTITY_FIELDS = {"symbol", "name", "contract_address", "chain"}
+
+
+def has_data(metrics_obj: Optional[Any], ignore: Optional[set] = None) -> bool:
+    """True if the metrics object has at least one populated, non-identity field."""
+    if metrics_obj is None:
+        return False
+    ignore = ignore or set()
+    for key, value in asdict(metrics_obj).items():
+        if key in ignore:
+            continue
+        if value is not None and value != [] and value != {}:
+            return True
+    return False
 
 
 # Default scoring weights for each category

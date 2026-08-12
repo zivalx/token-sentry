@@ -1,5 +1,5 @@
 @echo off
-REM TokenHealth - Windows run script
+REM token-sentry - Windows run script
 
 if "%1"=="build" (
     echo Building Docker containers...
@@ -9,14 +9,12 @@ if "%1"=="build" (
 
 if "%1"=="up" (
     echo Starting all services...
-    set DEMO_MODE=true
     docker-compose up
     goto :eof
 )
 
 if "%1"=="up-build" (
     echo Building and starting all services...
-    set DEMO_MODE=true
     docker-compose up --build
     goto :eof
 )
@@ -34,9 +32,9 @@ if "%1"=="logs" (
 )
 
 if "%1"=="test" (
-    echo Running tests...
+    echo Running backend tests...
     cd backend
-    pytest test_app.py -v
+    pytest tests -v
     cd ..
     goto :eof
 )

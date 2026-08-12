@@ -8,6 +8,7 @@ and populating the corresponding metrics dataclass.
 import logging
 import requests
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 import time
@@ -167,7 +168,9 @@ class CoinGeckoFetcher(DataFetcher):
         platform_map = {
             "ethereum": "ethereum",
             "bsc": "binance-smart-chain",
-            "polygon": "polygon-pos"
+            "polygon": "polygon-pos",
+            "arbitrum": "arbitrum-one",
+            "base": "base"
         }
         platform = platform_map.get(chain.lower())
 
@@ -213,12 +216,19 @@ class CoinGeckoFetcher(DataFetcher):
 # ============================================================================
 
 class EtherscanFetcher(DataFetcher):
-    """Fetch on-chain data from Etherscan (and BSCScan, PolygonScan)"""
+    """Fetch on-chain data from the Etherscan V2 API.
 
-    CHAIN_URLS = {
-        "ethereum": "https://api.etherscan.io/api",
-        "bsc": "https://api.bscscan.com/api",
-        "polygon": "https://api.polygonscan.com/api"
+    V2 is one host for every chain, selected by a `chainid` param — the V1
+    per-chain hosts (api.bscscan.com, api.polygonscan.com) are retired."""
+
+    BASE_URL = "https://api.etherscan.io/v2/api"
+
+    CHAIN_IDS = {
+        "ethereum": "1",
+        "bsc": "56",
+        "polygon": "137",
+        "arbitrum": "42161",
+        "base": "8453"
     }
 
     def __init__(self, api_key: str):
@@ -226,8 +236,8 @@ class EtherscanFetcher(DataFetcher):
 
     def fetch(self, contract: str, chain: str = "ethereum") -> Optional[OnChainMetrics]:
         """Fetch on-chain metrics from block explorer"""
-        base_url = self.CHAIN_URLS.get(chain.lower())
-        if not base_url:
+        chain_id = self.CHAIN_IDS.get(chain.lower())
+        if not chain_id:
             logger.warning(f"Unsupported chain for Etherscan: {chain}")
             return None
 
@@ -239,7 +249,7 @@ class EtherscanFetcher(DataFetcher):
         metrics = OnChainMetrics(contract_address=contract, chain=chain)
 
         # Fetch contract source code (includes verification, proxy, etc.)
-        source_data = self._get_contract_source(base_url, contract)
+        source_data = self._get_contract_source(chain_id, contract)
         if source_data:
             metrics.source_verified = source_data.get("SourceCode") != ""
             metrics.proxy_contract = source_data.get("Proxy") == "1"
@@ -248,7 +258,7 @@ class EtherscanFetcher(DataFetcher):
             metrics.optimization_enabled = source_data.get("OptimizationUsed") == "1"
 
         # Fetch token holder statistics
-        holder_data = self._get_token_holders(base_url, contract)
+        holder_data = self._get_token_holders(chain_id, contract)
         if holder_data:
             metrics.holders_count = len(holder_data)
             metrics.top_1_holder_pct = self._calculate_holder_concentration(holder_data, 1)
@@ -257,7 +267,7 @@ class EtherscanFetcher(DataFetcher):
             metrics.top_50_holder_pct = self._calculate_holder_concentration(holder_data, 50)
 
         # Fetch contract creation transaction
-        creation_data = self._get_contract_creation(base_url, contract)
+        creation_data = self._get_contract_creation(chain_id, contract)
         if creation_data:
             metrics.owner_address = creation_data.get("contractCreator")
             if creation_data.get("timestamp"):
@@ -267,13 +277,13 @@ class EtherscanFetcher(DataFetcher):
                 metrics.contract_age_days = (datetime.now() - created_dt).days
 
         # Fetch token supply info
-        supply_data = self._get_token_supply(base_url, contract)
+        supply_data = self._get_token_supply(chain_id, contract)
         if supply_data:
             metrics.total_supply = supply_data.get("totalSupply")
             metrics.circulating_supply = supply_data.get("circulatingSupply")
 
         # Fetch transaction count
-        tx_data = self._get_transaction_stats(base_url, contract)
+        tx_data = self._get_transaction_stats(chain_id, contract)
         if tx_data:
             metrics.tx_count_24h = tx_data.get("tx_24h")
             metrics.tx_count_7d = tx_data.get("tx_7d")
@@ -283,20 +293,21 @@ class EtherscanFetcher(DataFetcher):
         self._set_cache(cache_key, metrics)
         return metrics
 
-    def _get_contract_source(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_contract_source(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get contract source code and metadata"""
         params = {
+            "chainid": chain_id,
             "module": "contract",
             "action": "getsourcecode",
             "address": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1" and data.get("result"):
             return data["result"][0]
         return None
 
-    def _get_token_holders(self, base_url: str, contract: str, limit: int = 100) -> Optional[List[Dict]]:
+    def _get_token_holders(self, chain_id: str, contract: str, limit: int = 100) -> Optional[List[Dict]]:
         """Get top token holders (Note: This requires pro API on some explorers)"""
         # Note: This endpoint is not available on free tier for most block explorers
         # You may need to use alternative methods like querying Transfer events
@@ -304,28 +315,30 @@ class EtherscanFetcher(DataFetcher):
         logger.info("Token holder data requires pro API tier on most block explorers")
         return None
 
-    def _get_contract_creation(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_contract_creation(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get contract creation transaction"""
         params = {
+            "chainid": chain_id,
             "module": "contract",
             "action": "getcontractcreation",
             "contractaddresses": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1" and data.get("result"):
             return data["result"][0]
         return None
 
-    def _get_token_supply(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_token_supply(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get token supply information"""
         params = {
+            "chainid": chain_id,
             "module": "stats",
             "action": "tokensupply",
             "contractaddress": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1":
             try:
                 return {"totalSupply": float(data.get("result", 0)) / 1e18}
@@ -333,7 +346,7 @@ class EtherscanFetcher(DataFetcher):
                 return None
         return None
 
-    def _get_transaction_stats(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_transaction_stats(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get transaction statistics (approximation via recent transfers)"""
         # This is a simplified version - you'd need to query Transfer events
         # and aggregate by time period for accurate stats
@@ -359,6 +372,7 @@ class AlchemyFetcher(DataFetcher):
         "ethereum": "https://eth-mainnet.g.alchemy.com/v2/",
         "polygon": "https://polygon-mainnet.g.alchemy.com/v2/",
         "arbitrum": "https://arb-mainnet.g.alchemy.com/v2/",
+        "base": "https://base-mainnet.g.alchemy.com/v2/",
         "optimism": "https://opt-mainnet.g.alchemy.com/v2/"
     }
 
@@ -468,66 +482,158 @@ class DexScreenerFetcher(DataFetcher):
 # SECURITY DATA FETCHERS
 # ============================================================================
 
-class GoPolusSecurityFetcher(DataFetcher):
-    """Fetch security data from GoPlus Security API (free)"""
+@dataclass
+class GoPlusData:
+    """Parsed GoPlus token_security response, routed to the metrics each
+    signal belongs to. Trading-safety flags (honeypot, taxes) live on
+    LiquidityMetrics so the scorer's honeypot penalty actually fires."""
+    security: SecurityMetrics
+    liquidity: LiquidityMetrics
+    onchain: OnChainMetrics
+
+
+class GoPlusSecurityFetcher(DataFetcher):
+    """Fetch contract security data from GoPlus Security API (free)"""
 
     BASE_URL = "https://api.gopluslabs.io/api/v1/token_security"
 
-    def fetch(self, contract: str, chain: str = "ethereum") -> Optional[SecurityMetrics]:
-        """Fetch security metrics from GoPlus"""
+    CHAIN_IDS = {
+        "ethereum": "1",
+        "bsc": "56",
+        "polygon": "137",
+        "arbitrum": "42161",
+        "base": "8453"
+    }
+
+    def fetch(self, contract: str, chain: str = "ethereum") -> Optional[GoPlusData]:
+        """Fetch and parse token security data from GoPlus"""
         cache_key = f"goplus_{contract}_{chain}"
         cached = self._get_cached(cache_key)
         if cached:
             return cached
 
-        # Map chain to GoPlus chain ID
-        chain_map = {
-            "ethereum": "1",
-            "bsc": "56",
-            "polygon": "137"
-        }
-        chain_id = chain_map.get(chain.lower())
-
+        chain_id = self.CHAIN_IDS.get(chain.lower())
         if not chain_id:
             logger.warning(f"Unsupported chain for GoPlus: {chain}")
             return None
 
-        params = {
-            "contract_addresses": contract,
-            "chain_id": chain_id
-        }
+        # GoPlus takes the chain id as a path segment; as a query param it 404s
+        params = {"contract_addresses": contract}
 
-        data = self._request_with_retry(self.BASE_URL, params=params)
+        data = self._request_with_retry(f"{self.BASE_URL}/{chain_id}", params=params)
         if not data or "result" not in data:
             return None
 
+        result = data["result"].get(contract.lower())
+        if not result:
+            return None
+
         try:
-            result = data["result"].get(contract.lower(), {})
-
-            vulnerabilities = []
-            if result.get("is_honeypot") == "1":
-                vulnerabilities.append("Honeypot detected")
-            if result.get("is_proxy") == "1":
-                vulnerabilities.append("Proxy contract")
-            if result.get("is_mintable") == "1":
-                vulnerabilities.append("Mintable")
-            if result.get("can_take_back_ownership") == "1":
-                vulnerabilities.append("Can take back ownership")
-            if result.get("hidden_owner") == "1":
-                vulnerabilities.append("Hidden owner")
-            if result.get("selfdestruct") == "1":
-                vulnerabilities.append("Self-destruct function")
-
-            metrics = SecurityMetrics(
-                known_vulnerabilities=vulnerabilities,
-            )
-
-            self._set_cache(cache_key, metrics)
-            return metrics
-
+            parsed = self.parse_result(result, contract=contract, chain=chain)
+            self._set_cache(cache_key, parsed)
+            return parsed
         except Exception as e:
             logger.error(f"Error parsing GoPlus data: {e}")
             return None
+
+    def parse_result(
+        self,
+        result: Dict[str, Any],
+        contract: str = "",
+        chain: str = "ethereum"
+    ) -> GoPlusData:
+        """Parse a GoPlus token_security result dict (values are "0"/"1" strings)."""
+
+        def flag(key: str) -> Optional[bool]:
+            value = result.get(key)
+            if value is None or value == "":
+                return None
+            return value == "1"
+
+        def pct(key: str) -> Optional[float]:
+            """GoPlus taxes are 0-1 fractions; convert to percent."""
+            value = result.get(key)
+            if value in (None, ""):
+                return None
+            try:
+                return float(value) * 100
+            except (TypeError, ValueError):
+                return None
+
+        def holder_pct(holders: Optional[List[Dict]], top_n: int) -> Optional[float]:
+            """Sum the supply share of the top N holders (GoPlus sorts desc;
+            `percent` is a 0-1 fraction string)."""
+            if not holders:
+                return None
+            total = 0.0
+            for holder in holders[:top_n]:
+                try:
+                    total += float(holder.get("percent", 0))
+                except (TypeError, ValueError):
+                    continue
+            return round(total * 100, 4)
+
+        honeypot = flag("is_honeypot")
+        cannot_sell_all = flag("cannot_sell_all")
+
+        liquidity = LiquidityMetrics(
+            honeypot_risk=honeypot,
+            can_sell=(not (honeypot or cannot_sell_all))
+            if (honeypot is not None or cannot_sell_all is not None) else None,
+            buy_tax=pct("buy_tax"),
+            sell_tax=pct("sell_tax"),
+        )
+
+        # LP lock status: sum the share held by lockers/burn addresses
+        lp_holders = result.get("lp_holders")
+        if lp_holders:
+            locked = 0.0
+            for lp in lp_holders:
+                try:
+                    if lp.get("is_locked") in (1, "1", True):
+                        locked += float(lp.get("percent", 0))
+                except (TypeError, ValueError):
+                    continue
+            liquidity.liquidity_locked_pct = round(locked * 100, 4)
+            liquidity.liquidity_locked = liquidity.liquidity_locked_pct > 0
+            liquidity.lp_holders_count = len(lp_holders)
+            liquidity.lp_top_1_holder_pct = holder_pct(lp_holders, 1)
+
+        onchain = OnChainMetrics(
+            contract_address=contract,
+            chain=chain,
+            source_verified=flag("is_open_source"),
+            proxy_contract=flag("is_proxy"),
+            mintable=flag("is_mintable"),
+            blacklist_function=flag("is_blacklisted"),
+            owner_address=result.get("owner_address") or None,
+        )
+        holder_count = result.get("holder_count")
+        if holder_count:
+            try:
+                onchain.holders_count = int(holder_count)
+            except (TypeError, ValueError):
+                pass
+
+        # Top-holder concentration — the strongest rug signal after honeypot
+        holders = result.get("holders")
+        onchain.top_1_holder_pct = holder_pct(holders, 1)
+        onchain.top_3_holder_pct = holder_pct(holders, 3)
+        onchain.top_10_holder_pct = holder_pct(holders, 10)
+
+        vulnerabilities = []
+        if flag("can_take_back_ownership"):
+            vulnerabilities.append("Owner can take back ownership")
+        if flag("hidden_owner"):
+            vulnerabilities.append("Hidden owner")
+        if flag("selfdestruct"):
+            vulnerabilities.append("Self-destruct function present")
+        if flag("external_call"):
+            vulnerabilities.append("External call risk")
+
+        security = SecurityMetrics(known_vulnerabilities=vulnerabilities)
+
+        return GoPlusData(security=security, liquidity=liquidity, onchain=onchain)
 
 
 # ============================================================================
@@ -571,14 +677,16 @@ class GitHubFetcher(DataFetcher):
             since_30d = (datetime.now() - timedelta(days=30)).isoformat()
             since_90d = (datetime.now() - timedelta(days=90)).isoformat()
 
+            # per_page=100 — the default page size of 30 silently capped the
+            # commit counts and made the ">50 commits" scoring branch unreachable
             commits_30d = self._request_with_retry(
                 commits_url,
-                params={"since": since_30d},
+                params={"since": since_30d, "per_page": 100},
                 headers=self.headers
             )
             commits_90d = self._request_with_retry(
                 commits_url,
-                params={"since": since_90d},
+                params={"since": since_90d, "per_page": 100},
                 headers=self.headers
             )
 
@@ -645,7 +753,7 @@ class DataFetcherRegistry:
 
     def register_security_fetchers(self):
         """Register security data fetchers"""
-        self.fetchers["goplus"] = GoPolusSecurityFetcher()
+        self.fetchers["goplus"] = GoPlusSecurityFetcher()
 
     def register_social_fetchers(self, github_token: Optional[str] = None):
         """Register social media fetchers"""

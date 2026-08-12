@@ -1,1 +1,0 @@
-- contract/ website/ git/ whitepaper/ community

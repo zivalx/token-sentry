@@ -1,8 +1,7 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-networkx==3.2.1
-python-multipart==0.0.6
-pytest==7.4.3
-httpx==0.25.2
-requests==2.31.0
+# Runtime dependencies — pinned for reproducible builds
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+requests==2.34.2
+python-dotenv==1.2.2
+anthropic==0.121.0

@@ -1,9 +1,57 @@
 # Changelog
 
-All notable changes to TokenHealth will be documented in this file.
+All notable changes to token-sentry will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2026-08-12
+
+Rebuild after a full code review. Theme: the tool must never lie — no fabricated data, no silently dead scoring branches, no docs describing features that don't exist.
+
+### Fixed
+- **Honeypot signal now scores.** GoPlus honeypot/can't-sell/tax flags were stored as strings in `SecurityMetrics.known_vulnerabilities`, so the scorer's -50 honeypot penalty never fired. `GoPlusSecurityFetcher.parse_result()` now routes each signal to the metrics category where scoring reads it.
+- **No more fabricated data.** Removed `_estimate_exchanges` (exchange names invented from market cap) and the `volume * 0.2` liquidity estimate. List endpoints report CMC's real `num_market_pairs`; unavailable fields are `null` and render as `N/A`.
+- **Missing data no longer scores as neutral.** Empty metric categories (e.g. team/utility, which have no automated source) are excluded from scoring and confidence instead of contributing a free 50/100 at 25% combined weight.
+- **Unreachable scoring branches.** The `<7 days` contract-age penalty was shadowed by the `<30 days` branch; the `>50 commits` GitHub branch was unreachable because the API returns max 30 items/page (now `per_page=100`).
+- **Manipulation signal rewarded points.** Volume/mcap > 1.0 flagged "possible manipulation" while *adding* +10 to the score; it now subtracts.
+- **Docker actually starts.** `python-dotenv` and `anthropic` were missing from `requirements.txt`, crashing the container on import; the compose healthcheck used `curl`, which doesn't exist in `python:slim`.
+- **Address validation validates.** `sanitize_address` returned every invalid input unchanged (even prepending `0x` to garbage); invalid addresses are now 400s, and tickers pasted into the contract field get resolved.
+- **Failed ticker resolutions are no longer cached forever** (`lru_cache` cached `None` for the process lifetime).
+- **Error hygiene.** Exception details and tracebacks no longer leak into HTTP 500 responses; CORS no longer combines wildcard origins with credentials.
+- Deprecated APIs: `datetime.utcnow()`, sqlite3's implicit datetime adapter, and an outdated Claude model ID.
+
+### Changed
+- `POST /health` is implemented (alias for `/health/comprehensive`) instead of returning 501.
+- Ports standardized: backend :8000, frontend :3000 — compose, docs, and UI error messages now agree.
+- One name everywhere: **token-sentry** (was TokenHealth in docs, token_dd in clone instructions).
+- README rewritten to describe the actual product; added `CLAUDE.md` (AI-assist context) and `backend/.env.example`.
+
+### Added
+- Multi-chain: Arbitrum and Base supported end-to-end (GoPlus, Etherscan V2,
+  CoinGecko, DexScreener, CMC platform maps) with a chain selector in the UI
+- Holder concentration (top 1/3/10 shares) and liquidity-lock percentages
+  extracted from the GoPlus response we already fetch — zero new API calls;
+  lock scoring graded by percentage, and unknown taxes no longer score as
+  "no taxes"
+- Score history: every completed analysis records a snapshot (SQLite);
+  `GET /health/history/{address}` + score-over-time in the report modal
+- Keyless-mode UX: newest/gainers tabs explain the missing CMC key instead
+  of a generic empty state
+- Keyless trending: `/tokens/trending` falls back to CoinGecko when no CMC
+  key is configured (honest fields only; cached 10 min in SQLite)
+- The full-report modal is reachable (a "Full report" button in the expanded
+  row) and restyled to the app theme — it was dead code written in Tailwind
+  classes the project never had
+- Etherscan fetcher migrated to the V2 API (single host + `chainid` param);
+  the V1 per-chain hosts (api.bscscan.com, api.polygonscan.com) are retired
+- GitHub Actions CI: backend tests, frontend build, docker compose build
+- Real pytest suite (`backend/tests/`, 43 tests): scoring-engine branch reachability, honeypot wiring, empty-category handling, address validation, API error hygiene, GoPlus parsing, cache behavior, and no-fabricated-data guarantees.
+- Configurable CORS origins (`CORS_ORIGINS`), `requirements-dev.txt`, optional `env_file` in compose.
+
+### Removed
+- Dead v1 code: `heuristics.py`, `graph_builder.py`, `llm_agent.py` (an "LLM agent" that never called an LLM), `example_usage.py`, `App.jsx`, `ComprehensiveHealth.jsx`, demo/seed-data scaffolding, `requirements_health.txt`.
+- CHANGELOG claims that were never true (the 1.0.0 entry below described a test suite and seed data that did not exist in the repository).
 
 ## [1.0.0] - 2025-12-08
 
@@ -97,36 +145,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Honeypot detection is placeholder only
 - No social sentiment analysis
 - Ethereum mainnet only (no multi-chain support)
-
-## [Unreleased]
-
-### Planned Features
-- [ ] Live API integration (Etherscan, Covalent, The Graph)
-- [ ] Multi-chain support (BSC, Polygon, Arbitrum)
-- [ ] Real LLM integration (Claude API)
-- [ ] User authentication and API keys
-- [ ] Historical risk score tracking
-- [ ] Social sentiment analysis
-- [ ] Honeypot detection integration
-- [ ] WebSocket support for live updates
-- [ ] Export reports as PDF
-- [ ] Advanced graph analytics
-- [ ] Rate limiting and caching
-- [ ] PostgreSQL persistence
-- [ ] Multi-token comparison
-- [ ] Mobile app (React Native)
-
-### Bug Fixes
-- None yet (v1.0 initial release)
-
----
-
-## Version History Summary
-
-- **v1.0.0** (2025-12-08): Initial prototype release with demo mode
-
----
-
-For detailed changes, see the [commit history](https://github.com/yourusername/tokenhealth/commits/).
-
-To upgrade, see [UPGRADE.md](UPGRADE.md) (to be created for future versions).

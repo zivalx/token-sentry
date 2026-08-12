@@ -1,6 +1,6 @@
-# Contributing to TokenHealth
+# Contributing to token-sentry
 
-Thank you for considering contributing to TokenHealth! This document provides guidelines and instructions for contributing.
+Thank you for considering contributing to token-sentry! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -51,7 +51,7 @@ Thank you for considering contributing to TokenHealth! This document provides gu
    ```bash
    # Backend tests
    cd backend
-   pytest test_app.py -v
+   pytest tests -v
 
    # Frontend (if applicable)
    cd frontend
@@ -106,10 +106,10 @@ npm install
 ```bash
 # Backend
 cd backend
-pytest test_app.py -v
+pytest tests -v
 
 # With coverage
-pytest test_app.py --cov=. --cov-report=html
+pytest tests --cov=. --cov-report=html
 ```
 
 ## Code Style
@@ -181,7 +181,7 @@ To add a new risk heuristic:
    total_risk += self._check_new_heuristic(metrics)
    ```
 
-3. **Add tests in `test_app.py`**
+3. **Add tests in `backend/tests/`**
    ```python
    def test_new_heuristic(self):
        """Test new heuristic logic"""
