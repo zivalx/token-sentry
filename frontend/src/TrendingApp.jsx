@@ -14,10 +14,18 @@ function TrendingApp() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [expandedToken, setExpandedToken] = useState(null)
   const [selectedToken, setSelectedToken] = useState(null)
+  const [cmcAvailable, setCmcAvailable] = useState(null)
 
   useEffect(() => {
     loadTokens()
   }, [filter])
+
+  useEffect(() => {
+    // Newest/gainers need a CoinMarketCap key; trending has a keyless fallback.
+    axios.get(`${API_BASE}/health/status`)
+      .then(res => setCmcAvailable(Boolean(res.data?.data_sources?.coinmarketcap)))
+      .catch(() => setCmcAvailable(null))
+  }, [])
 
   const loadTokens = async () => {
     setLoading(true)
@@ -278,19 +286,34 @@ function TrendingApp() {
               <p>Loading {filter} tokens...</p>
             </div>
           ) : trending.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">📊</div>
-              <h3>No {filter.charAt(0).toUpperCase() + filter.slice(1)} Tokens Available</h3>
-              <p>Unable to fetch {filter} data right now. This could be due to:</p>
-              <ul>
-                <li>API rate limiting</li>
-                <li>Network connectivity issues</li>
-                <li>Backend not running (check port 8000)</li>
-              </ul>
-              <button className="btn btn-secondary" onClick={loadTokens}>
-                Retry
-              </button>
-            </div>
+            filter !== 'trending' && cmcAvailable === false ? (
+              <div className="empty-state">
+                <div className="empty-icon">🔑</div>
+                <h3>Requires a CoinMarketCap API key</h3>
+                <p>
+                  The {filter} list comes from CoinMarketCap, which needs a (free) API key —
+                  the trending tab works without one.
+                </p>
+                <p>
+                  Get a key at coinmarketcap.com/api, set <code>CMC_API_KEY</code> in{' '}
+                  <code>backend/.env</code> (see <code>backend/.env.example</code>), and restart the backend.
+                </p>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">📊</div>
+                <h3>No {filter.charAt(0).toUpperCase() + filter.slice(1)} Tokens Available</h3>
+                <p>Unable to fetch {filter} data right now. This could be due to:</p>
+                <ul>
+                  <li>API rate limiting</li>
+                  <li>Network connectivity issues</li>
+                  <li>Backend not running (check port 8000)</li>
+                </ul>
+                <button className="btn btn-secondary" onClick={loadTokens}>
+                  Retry
+                </button>
+              </div>
+            )
           ) : (
             <div className="trending-table">
               <div className="table-wrapper">
