@@ -1,6 +1,6 @@
 # API Keys Setup Guide
 
-Complete guide to getting free API keys for TokenHealth.
+Complete guide to getting free API keys for token-sentry.
 
 ## Required vs Optional APIs
 
@@ -58,7 +58,7 @@ These work out-of-the-box without any registration!
 2. Click "Get started for free"
 3. Sign up with email or GitHub
 4. Create a new app:
-   - Name: TokenHealth
+   - Name: token-sentry
    - Chain: Ethereum
    - Network: Mainnet
 5. Click on your app
@@ -154,7 +154,7 @@ curl -X POST https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY \
 
 Should return current block number.
 
-### Test in TokenHealth
+### Test in token-sentry
 
 ```bash
 # Start backend
@@ -312,7 +312,7 @@ The backend automatically resolves tickers to addresses.
 
 ## Multi-Chain Support
 
-TokenHealth supports multiple chains:
+token-sentry supports multiple chains:
 
 ```bash
 # Ethereum (default)
@@ -352,7 +352,7 @@ curl http://localhost:8000/tokens/trending?chain=arbitrum
 1. Add caching (Redis recommended)
 2. Implement request queuing
 3. Upgrade to paid tier
-4. Use demo mode for development
+4. Develop without keys (CoinGecko/DexScreener/GoPlus free tiers)
 
 ### Invalid API key
 
