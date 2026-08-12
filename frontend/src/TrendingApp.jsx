@@ -10,6 +10,7 @@ function TrendingApp() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('trending')
+  const [chain, setChain] = useState('ethereum')
   const [contract, setContract] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [expandedToken, setExpandedToken] = useState(null)
@@ -18,7 +19,7 @@ function TrendingApp() {
 
   useEffect(() => {
     loadTokens()
-  }, [filter])
+  }, [filter, chain])
 
   useEffect(() => {
     // Newest/gainers need a CoinMarketCap key; trending has a keyless fallback.
@@ -42,8 +43,7 @@ function TrendingApp() {
     const dataKey = filter // Response keys match filter names
 
     try {
-      console.log('Fetching from:', `${API_BASE}/tokens/${endpoint}?limit=20`)
-      const response = await axios.get(`${API_BASE}/tokens/${endpoint}?limit=20`)
+      const response = await axios.get(`${API_BASE}/tokens/${endpoint}?limit=20&chain=${chain}`)
       console.log(`${filter} response:`, response.data)
 
       const data = response.data?.[dataKey]
@@ -121,7 +121,7 @@ function TrendingApp() {
       console.log('Analyzing token via API:', contract.trim())
       const response = await axios.post(`${API_BASE}/health/comprehensive`, {
         contract: contract.trim(),
-        chain: 'ethereum'
+        chain
       })
 
       console.log('Analysis response:', response.data)
@@ -136,6 +136,7 @@ function TrendingApp() {
         symbol: market.symbol || contract.trim(),
         name: market.name || 'Unknown Token',
         address: contract.trim(),
+        chain,
         priceUsd: market.price_usd || 0,
         priceChange24h: market.price_change_24h ?? 0,
         volume24h: market.volume_24h || 0,
@@ -257,6 +258,18 @@ function TrendingApp() {
               {filter === 'trending' && '🔥 Trending Tokens'}
             </h2>
             <div className="trending-filters">
+              <select
+                className="chain-select"
+                value={chain}
+                onChange={(e) => setChain(e.target.value)}
+                title="Blockchain network"
+              >
+                <option value="ethereum">Ethereum</option>
+                <option value="bsc">BSC</option>
+                <option value="polygon">Polygon</option>
+                <option value="arbitrum">Arbitrum</option>
+                <option value="base">Base</option>
+              </select>
               <button
                 className={`filter-btn ${filter === 'trending' ? 'active' : ''}`}
                 onClick={() => setFilter('trending')}

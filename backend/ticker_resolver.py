@@ -105,6 +105,7 @@ class TickerResolver:
                 "bsc": "binance-smart-chain",
                 "polygon": "polygon-pos",
                 "arbitrum": "arbitrum-one",
+                "base": "base",
             }
 
             platform_key = chain_map.get(chain.lower(), "ethereum")
@@ -136,6 +137,7 @@ class TickerResolver:
                 "bsc": "bsc",
                 "polygon": "polygon",
                 "arbitrum": "arbitrum",
+                "base": "base",
             }
 
             chain_id = chain_map.get(chain.lower(), "ethereum")
@@ -278,6 +280,7 @@ class TickerResolver:
             "bsc": "binance-smart-chain",
             "polygon": "polygon-pos",
             "arbitrum": "arbitrum-one",
+            "base": "base",
         }
         platform_key = chain_map.get(chain.lower(), "ethereum")
         address = (coin_data.get("platforms") or {}).get(platform_key)

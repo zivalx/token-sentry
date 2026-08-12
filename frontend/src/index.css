@@ -1332,3 +1332,19 @@ td.right {
   color: var(--text-secondary);
   text-transform: capitalize;
 }
+
+/* Chain selector */
+.chain-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  padding: 0.45rem 0.7rem;
+  margin-right: 0.5rem;
+  cursor: pointer;
+}
+
+.chain-select:hover {
+  border-color: var(--accent-blue);
+}

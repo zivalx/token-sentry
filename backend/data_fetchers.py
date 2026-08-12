@@ -168,7 +168,9 @@ class CoinGeckoFetcher(DataFetcher):
         platform_map = {
             "ethereum": "ethereum",
             "bsc": "binance-smart-chain",
-            "polygon": "polygon-pos"
+            "polygon": "polygon-pos",
+            "arbitrum": "arbitrum-one",
+            "base": "base"
         }
         platform = platform_map.get(chain.lower())
 
@@ -224,7 +226,9 @@ class EtherscanFetcher(DataFetcher):
     CHAIN_IDS = {
         "ethereum": "1",
         "bsc": "56",
-        "polygon": "137"
+        "polygon": "137",
+        "arbitrum": "42161",
+        "base": "8453"
     }
 
     def __init__(self, api_key: str):
@@ -368,6 +372,7 @@ class AlchemyFetcher(DataFetcher):
         "ethereum": "https://eth-mainnet.g.alchemy.com/v2/",
         "polygon": "https://polygon-mainnet.g.alchemy.com/v2/",
         "arbitrum": "https://arb-mainnet.g.alchemy.com/v2/",
+        "base": "https://base-mainnet.g.alchemy.com/v2/",
         "optimism": "https://opt-mainnet.g.alchemy.com/v2/"
     }
 
@@ -495,7 +500,9 @@ class GoPlusSecurityFetcher(DataFetcher):
     CHAIN_IDS = {
         "ethereum": "1",
         "bsc": "56",
-        "polygon": "137"
+        "polygon": "137",
+        "arbitrum": "42161",
+        "base": "8453"
     }
 
     def fetch(self, contract: str, chain: str = "ethereum") -> Optional[GoPlusData]:

@@ -48,3 +48,51 @@ class TestEtherscanV2:
             assert url == "https://api.etherscan.io/v2/api"
             assert params.get("chainid") == "56"
             assert params.get("apikey") == "test-key"
+
+
+class TestMultiChainSupport:
+    """Arbitrum and Base must be first-class chains in every fetcher."""
+
+    def test_goplus_supports_arbitrum_and_base(self):
+        from data_fetchers import GoPlusSecurityFetcher
+
+        for chain, chain_id in (("arbitrum", "42161"), ("base", "8453")):
+            fetcher = GoPlusSecurityFetcher()
+            captured = {}
+
+            def fake_request(url, params=None, **kwargs):
+                captured["url"] = url
+                return {"result": {}}
+
+            fetcher._request_with_retry = fake_request
+            fetcher.fetch("0x" + "a" * 40, chain)
+            assert captured["url"].endswith(f"/token_security/{chain_id}"), chain
+
+    def test_etherscan_supports_arbitrum_and_base(self):
+        from data_fetchers import EtherscanFetcher
+
+        for chain, chain_id in (("arbitrum", "42161"), ("base", "8453")):
+            fetcher = EtherscanFetcher(api_key="k")
+            captured = []
+
+            def fake_request(url, params=None, **kwargs):
+                captured.append(params or {})
+                return None
+
+            fetcher._request_with_retry = fake_request
+            fetcher.fetch("0x" + "a" * 40, chain)
+            assert captured and all(p.get("chainid") == chain_id for p in captured), chain
+
+    def test_coingecko_market_fetcher_supports_base(self):
+        from data_fetchers import CoinGeckoFetcher
+
+        fetcher = CoinGeckoFetcher()
+        captured = {}
+
+        def fake_request(url, params=None, **kwargs):
+            captured["url"] = url
+            return None
+
+        fetcher._request_with_retry = fake_request
+        fetcher.fetch("0x" + "a" * 40, "base")
+        assert "/coins/base/contract/" in captured.get("url", "")

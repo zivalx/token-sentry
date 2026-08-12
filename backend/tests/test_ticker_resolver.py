@@ -103,3 +103,22 @@ class TestCoinGeckoTrendingHonesty:
     def test_returns_none_without_address_on_chain(self):
         coin = dict(self.COIN_DATA, platforms={})
         assert TickerResolver()._cg_trending_token(coin, "ethereum") is None
+
+
+class TestMultiChainTrendingToken:
+    def test_base_and_arbitrum_platform_mapping(self):
+        resolver = TickerResolver()
+        for chain, platform_key in (("base", "base"), ("arbitrum", "arbitrum-one")):
+            coin = {
+                "symbol": "abc",
+                "name": "ABC",
+                "platforms": {platform_key: "0x" + "5" * 40},
+                "market_data": {
+                    "current_price": {"usd": 1.0},
+                    "total_volume": {"usd": 1_000_000},
+                    "market_cap": {"usd": 10_000_000},
+                },
+            }
+            token = resolver._cg_trending_token(coin, chain)
+            assert token is not None, chain
+            assert token["address"] == "0x" + "5" * 40

@@ -95,7 +95,8 @@ class CMCClient:
                 "ethereum": "Ethereum",
                 "bsc": "BNB Smart Chain (BEP20)",
                 "polygon": "Polygon",
-                "arbitrum": "Arbitrum"
+                "arbitrum": "Arbitrum",
+                "base": "Base"
             }
             if platform.get("name") == chain_map.get(chain.lower()):
                 return platform.get("token_address", "")

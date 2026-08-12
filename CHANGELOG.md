@@ -28,6 +28,8 @@ Rebuild after a full code review. Theme: the tool must never lie — no fabricat
 - README rewritten to describe the actual product; added `CLAUDE.md` (AI-assist context) and `backend/.env.example`.
 
 ### Added
+- Multi-chain: Arbitrum and Base supported end-to-end (GoPlus, Etherscan V2,
+  CoinGecko, DexScreener, CMC platform maps) with a chain selector in the UI
 - Holder concentration (top 1/3/10 shares) and liquidity-lock percentages
   extracted from the GoPlus response we already fetch — zero new API calls;
   lock scoring graded by percentage, and unknown taxes no longer score as

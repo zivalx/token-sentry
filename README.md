@@ -1,6 +1,6 @@
 # Token Sentry
 
-**Token Sentry** is a token due-diligence tool for ERC-20 tokens (Ethereum, BSC, Polygon). It aggregates market, on-chain, liquidity, security, and development data from public APIs and produces an explainable 0-100 health score across weighted categories — plus a trending/newest/gainers dashboard.
+**Token Sentry** is a token due-diligence tool for ERC-20 tokens on Ethereum, BSC, Polygon, Arbitrum, and Base. It aggregates market, on-chain, liquidity, security, and development data from public APIs and produces an explainable 0-100 health score across weighted categories — plus a trending/newest/gainers dashboard.
 
 ## Disclaimer
 
@@ -158,7 +158,6 @@ token-sentry/
 
 ## Roadmap
 
-- [ ] Multi-chain expansion (Arbitrum, Base)
 - [ ] Scheduled re-scoring (history currently accrues on demand)
 - [ ] Score-history sparkline in the report modal
 - [ ] Social metrics beyond GitHub (Twitter/Telegram APIs are paid/gated — parked rather than faked)
