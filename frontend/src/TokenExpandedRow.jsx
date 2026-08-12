@@ -1,4 +1,4 @@
-function TokenExpandedRow({ token }) {
+function TokenExpandedRow({ token, onFullReport }) {
   const formatNumber = (num) => {
     if (!num) return 'N/A'
     if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
@@ -118,6 +118,14 @@ function TokenExpandedRow({ token }) {
                 </div>
               )}
 
+              {onFullReport && (
+                <button
+                  className="btn btn-primary full-report-btn"
+                  onClick={(e) => { e.stopPropagation(); onFullReport(token) }}
+                >
+                  Full report
+                </button>
+              )}
             </div>
           </div>
         </div>

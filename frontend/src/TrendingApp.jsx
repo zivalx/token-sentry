@@ -361,7 +361,7 @@ function TrendingApp() {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <TokenExpandedRow token={token} />
+                        <TokenExpandedRow token={token} onFullReport={setSelectedToken} />
                       )}
                       </React.Fragment>
                       )
