@@ -1,0 +1,25 @@
+# NOTE: Docker reads .dockerignore from the build context root (this dir),
+# not the repo root — keep this file, not a top-level one.
+
+# Secrets — never bake into the image; compose injects env at runtime
+.env
+.env.*
+
+# Local state
+*.db
+*.sqlite
+*.log
+
+# Python
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tooling
+.vscode/
+.idea/
+.DS_Store

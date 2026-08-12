@@ -1,5 +1,5 @@
 #!/bin/bash
-# TokenHealth - Unix run script
+# token-sentry - Unix run script
 
 set -e
 
@@ -10,11 +10,11 @@ case "$1" in
     ;;
   up)
     echo "Starting all services..."
-    DEMO_MODE=true docker-compose up
+    docker-compose up
     ;;
   up-build)
     echo "Building and starting all services..."
-    DEMO_MODE=true docker-compose up --build
+    docker-compose up --build
     ;;
   down)
     echo "Stopping all services..."
@@ -25,9 +25,13 @@ case "$1" in
     docker-compose logs -f
     ;;
   test)
-    echo "Running tests..."
+    echo "Running backend tests..."
     cd backend
-    pytest test_app.py -v
+    if [ -x venv/bin/pytest ]; then
+      venv/bin/pytest tests -v
+    else
+      pytest tests -v
+    fi
     cd ..
     ;;
   clean)
