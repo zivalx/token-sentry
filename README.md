@@ -10,7 +10,7 @@
 
 - **Health scoring** — weighted 0-100 score across up to 7 categories (market, on-chain, liquidity, security, social, team, utility). Categories with no fetched data are excluded from the score and reported through a `confidence` / `data_completeness` pair — missing data is never scored as "neutral".
 - **Honeypot & contract-safety checks** — GoPlus security flags (honeypot, can't-sell, hidden owner, taxes) feed directly into the scoring.
-- **Token discovery** — trending / newest / top-gainer lists from CoinMarketCap with SQLite caching (10-min TTL, stale-cache fallback).
+- **Token discovery** — trending / newest / top-gainer lists from CoinMarketCap, with a keyless CoinGecko fallback for trending; SQLite caching (10-min TTL, stale-cache fallback).
 - **Ticker resolution** — analyze by ticker (`PEPE`) or contract address; resolution via CoinGecko with DexScreener fallback.
 - **AI summaries (optional)** — Claude-generated analyst summary when an `ANTHROPIC_API_KEY` is configured.
 
@@ -22,11 +22,11 @@ Every number shown is fetched from a source, never inferred. Fields no source pr
 
 | Source | Used for | Key required |
 |---|---|---|
-| CoinGecko | Market data, ticker resolution | No (free tier) |
+| CoinGecko | Market data, ticker resolution, trending fallback | No (free tier) |
 | DexScreener | Liquidity/pairs, ticker fallback | No |
 | GoPlus Security | Honeypot, taxes, contract flags | No |
-| CoinMarketCap | Trending/newest/gainers lists | Yes (free tier, 333 calls/day) |
-| Etherscan / BSCScan / PolygonScan | Contract verification, creation date | Yes (free tier) |
+| CoinMarketCap | Trending/newest/gainers lists (richer than the fallback) | Yes (free tier, 333 calls/day) |
+| Etherscan V2 (ETH/BSC/Polygon) | Contract verification, creation date | Yes (free tier) |
 | Alchemy | Supplementary on-chain data | Yes (free tier) |
 | GitHub | Development activity | Optional (higher rate limits) |
 | Anthropic | AI summaries | Yes (only for `include_llm`) |

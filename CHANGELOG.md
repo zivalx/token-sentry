@@ -28,7 +28,15 @@ Rebuild after a full code review. Theme: the tool must never lie — no fabricat
 - README rewritten to describe the actual product; added `CLAUDE.md` (AI-assist context) and `backend/.env.example`.
 
 ### Added
-- Real pytest suite (`backend/tests/`, 34 tests): scoring-engine branch reachability, honeypot wiring, empty-category handling, address validation, API error hygiene, GoPlus parsing, cache behavior, and no-fabricated-data guarantees.
+- Keyless trending: `/tokens/trending` falls back to CoinGecko when no CMC
+  key is configured (honest fields only; cached 10 min in SQLite)
+- The full-report modal is reachable (a "Full report" button in the expanded
+  row) and restyled to the app theme — it was dead code written in Tailwind
+  classes the project never had
+- Etherscan fetcher migrated to the V2 API (single host + `chainid` param);
+  the V1 per-chain hosts (api.bscscan.com, api.polygonscan.com) are retired
+- GitHub Actions CI: backend tests, frontend build, docker compose build
+- Real pytest suite (`backend/tests/`, 43 tests): scoring-engine branch reachability, honeypot wiring, empty-category handling, address validation, API error hygiene, GoPlus parsing, cache behavior, and no-fabricated-data guarantees.
 - Configurable CORS origins (`CORS_ORIGINS`), `requirements-dev.txt`, optional `env_file` in compose.
 
 ### Removed
@@ -127,36 +135,3 @@ Rebuild after a full code review. Theme: the tool must never lie — no fabricat
 - Honeypot detection is placeholder only
 - No social sentiment analysis
 - Ethereum mainnet only (no multi-chain support)
-
-## [Unreleased]
-
-### Planned Features
-- [ ] Live API integration (Etherscan, Covalent, The Graph)
-- [ ] Multi-chain support (BSC, Polygon, Arbitrum)
-- [ ] Real LLM integration (Claude API)
-- [ ] User authentication and API keys
-- [ ] Historical risk score tracking
-- [ ] Social sentiment analysis
-- [ ] Honeypot detection integration
-- [ ] WebSocket support for live updates
-- [ ] Export reports as PDF
-- [ ] Advanced graph analytics
-- [ ] Rate limiting and caching
-- [ ] PostgreSQL persistence
-- [ ] Multi-token comparison
-- [ ] Mobile app (React Native)
-
-### Bug Fixes
-- None yet (v1.0 initial release)
-
----
-
-## Version History Summary
-
-- **v1.0.0** (2025-12-08): Initial prototype release with demo mode
-
----
-
-For detailed changes, see the [commit history](https://github.com/yourusername/tokenhealth/commits/).
-
-To upgrade, see [UPGRADE.md](UPGRADE.md) (to be created for future versions).

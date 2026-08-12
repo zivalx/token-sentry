@@ -21,7 +21,7 @@ frontend (React/Vite, :3000) ──/api──▶ app.py (FastAPI, :8000)
               health_models.py (dataclasses)
 ```
 
-- **Two data paths**: list endpoints (`/tokens/*`) go through `cmc_client` + SQLite cache; per-token analysis (`/health*`) goes through `token_health_pipeline`.
+- **Two data paths**: list endpoints (`/tokens/*`) go through `cmc_client` + SQLite cache, with a keyless CoinGecko trending fallback in `ticker_resolver`; per-token analysis (`/health*`) goes through `token_health_pipeline`.
 - **Score semantics**: `overall_score` is HEALTH (high = good). The trending list's `riskScore` is RISK (high = bad). The frontend converts with `100 - overall_score` when merging an analysis into the list. Don't mix them up.
 - **Signal routing**: GoPlus returns one blob; `GoPlusSecurityFetcher.parse_result()` routes each signal to the category where scoring reads it — honeypot/taxes → `LiquidityMetrics`, contract flags → `OnChainMetrics`, vulnerabilities → `SecurityMetrics`. A signal on the wrong dataclass silently never scores (this was v1's worst bug).
 - **Missing data is absent, not neutral**: the scorer skips metrics objects with no populated fields (`has_data()` in `health_models.py`); weights renormalize; `confidence`/`data_completeness` tell the user how much data backed the score. Never attach empty metrics objects "for shape".
@@ -33,6 +33,7 @@ frontend (React/Vite, :3000) ──/api──▶ app.py (FastAPI, :8000)
 - **Caching**: cache successes, never failures (`ticker_resolver` learned this the hard way). SQLite timestamps are ISO strings — sqlite3's implicit datetime adapter is deprecated (Python 3.12+).
 - **Datetimes**: timezone-aware only (`datetime.now(timezone.utc)`), never `datetime.utcnow()`.
 - **Free-tier awareness**: CMC free tier is 333 calls/day — that's why list results are cached in SQLite for 10 min with stale-cache fallback. Don't add per-row API calls to list endpoints.
+- **Etherscan is V2 only**: one host (`api.etherscan.io/v2/api`) + `chainid` param; the per-chain V1 hosts are retired — never reintroduce them.
 - **Known limitation**: holder-concentration data needs a paid explorer tier; `EtherscanFetcher._get_token_holders` returns `None` on purpose. Concentration heuristics only run when data exists — don't fake it.
 
 ## Commands
