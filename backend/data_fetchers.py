@@ -214,12 +214,17 @@ class CoinGeckoFetcher(DataFetcher):
 # ============================================================================
 
 class EtherscanFetcher(DataFetcher):
-    """Fetch on-chain data from Etherscan (and BSCScan, PolygonScan)"""
+    """Fetch on-chain data from the Etherscan V2 API.
 
-    CHAIN_URLS = {
-        "ethereum": "https://api.etherscan.io/api",
-        "bsc": "https://api.bscscan.com/api",
-        "polygon": "https://api.polygonscan.com/api"
+    V2 is one host for every chain, selected by a `chainid` param — the V1
+    per-chain hosts (api.bscscan.com, api.polygonscan.com) are retired."""
+
+    BASE_URL = "https://api.etherscan.io/v2/api"
+
+    CHAIN_IDS = {
+        "ethereum": "1",
+        "bsc": "56",
+        "polygon": "137"
     }
 
     def __init__(self, api_key: str):
@@ -227,8 +232,8 @@ class EtherscanFetcher(DataFetcher):
 
     def fetch(self, contract: str, chain: str = "ethereum") -> Optional[OnChainMetrics]:
         """Fetch on-chain metrics from block explorer"""
-        base_url = self.CHAIN_URLS.get(chain.lower())
-        if not base_url:
+        chain_id = self.CHAIN_IDS.get(chain.lower())
+        if not chain_id:
             logger.warning(f"Unsupported chain for Etherscan: {chain}")
             return None
 
@@ -240,7 +245,7 @@ class EtherscanFetcher(DataFetcher):
         metrics = OnChainMetrics(contract_address=contract, chain=chain)
 
         # Fetch contract source code (includes verification, proxy, etc.)
-        source_data = self._get_contract_source(base_url, contract)
+        source_data = self._get_contract_source(chain_id, contract)
         if source_data:
             metrics.source_verified = source_data.get("SourceCode") != ""
             metrics.proxy_contract = source_data.get("Proxy") == "1"
@@ -249,7 +254,7 @@ class EtherscanFetcher(DataFetcher):
             metrics.optimization_enabled = source_data.get("OptimizationUsed") == "1"
 
         # Fetch token holder statistics
-        holder_data = self._get_token_holders(base_url, contract)
+        holder_data = self._get_token_holders(chain_id, contract)
         if holder_data:
             metrics.holders_count = len(holder_data)
             metrics.top_1_holder_pct = self._calculate_holder_concentration(holder_data, 1)
@@ -258,7 +263,7 @@ class EtherscanFetcher(DataFetcher):
             metrics.top_50_holder_pct = self._calculate_holder_concentration(holder_data, 50)
 
         # Fetch contract creation transaction
-        creation_data = self._get_contract_creation(base_url, contract)
+        creation_data = self._get_contract_creation(chain_id, contract)
         if creation_data:
             metrics.owner_address = creation_data.get("contractCreator")
             if creation_data.get("timestamp"):
@@ -268,13 +273,13 @@ class EtherscanFetcher(DataFetcher):
                 metrics.contract_age_days = (datetime.now() - created_dt).days
 
         # Fetch token supply info
-        supply_data = self._get_token_supply(base_url, contract)
+        supply_data = self._get_token_supply(chain_id, contract)
         if supply_data:
             metrics.total_supply = supply_data.get("totalSupply")
             metrics.circulating_supply = supply_data.get("circulatingSupply")
 
         # Fetch transaction count
-        tx_data = self._get_transaction_stats(base_url, contract)
+        tx_data = self._get_transaction_stats(chain_id, contract)
         if tx_data:
             metrics.tx_count_24h = tx_data.get("tx_24h")
             metrics.tx_count_7d = tx_data.get("tx_7d")
@@ -284,20 +289,21 @@ class EtherscanFetcher(DataFetcher):
         self._set_cache(cache_key, metrics)
         return metrics
 
-    def _get_contract_source(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_contract_source(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get contract source code and metadata"""
         params = {
+            "chainid": chain_id,
             "module": "contract",
             "action": "getsourcecode",
             "address": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1" and data.get("result"):
             return data["result"][0]
         return None
 
-    def _get_token_holders(self, base_url: str, contract: str, limit: int = 100) -> Optional[List[Dict]]:
+    def _get_token_holders(self, chain_id: str, contract: str, limit: int = 100) -> Optional[List[Dict]]:
         """Get top token holders (Note: This requires pro API on some explorers)"""
         # Note: This endpoint is not available on free tier for most block explorers
         # You may need to use alternative methods like querying Transfer events
@@ -305,28 +311,30 @@ class EtherscanFetcher(DataFetcher):
         logger.info("Token holder data requires pro API tier on most block explorers")
         return None
 
-    def _get_contract_creation(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_contract_creation(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get contract creation transaction"""
         params = {
+            "chainid": chain_id,
             "module": "contract",
             "action": "getcontractcreation",
             "contractaddresses": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1" and data.get("result"):
             return data["result"][0]
         return None
 
-    def _get_token_supply(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_token_supply(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get token supply information"""
         params = {
+            "chainid": chain_id,
             "module": "stats",
             "action": "tokensupply",
             "contractaddress": contract,
             "apikey": self.api_key
         }
-        data = self._request_with_retry(base_url, params=params)
+        data = self._request_with_retry(self.BASE_URL, params=params)
         if data and data.get("status") == "1":
             try:
                 return {"totalSupply": float(data.get("result", 0)) / 1e18}
@@ -334,7 +342,7 @@ class EtherscanFetcher(DataFetcher):
                 return None
         return None
 
-    def _get_transaction_stats(self, base_url: str, contract: str) -> Optional[Dict]:
+    def _get_transaction_stats(self, chain_id: str, contract: str) -> Optional[Dict]:
         """Get transaction statistics (approximation via recent transfers)"""
         # This is a simplified version - you'd need to query Transfer events
         # and aggregate by time period for accurate stats

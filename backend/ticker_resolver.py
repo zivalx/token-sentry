@@ -2,9 +2,12 @@
 Token Ticker Resolver
 Converts ticker symbols to contract addresses using multiple APIs
 """
+import logging
 import requests
 from typing import Optional, Dict, List, Any
 from cmc_client import get_cmc_client
+
+logger = logging.getLogger(__name__)
 
 
 class TickerResolver:
@@ -187,11 +190,13 @@ class TickerResolver:
         Uses database caching to minimize API calls
         Returns: list with symbol, name, address, price, volume, liquidity, supply, exchanges, risk
         """
-        print(f"🔍 Getting trending tokens for {chain} (limit: {limit})")
-
-        # Use CoinMarketCap client with database caching
         cmc_client = get_cmc_client()
-        return cmc_client.get_trending(chain, limit)
+        results = cmc_client.get_trending(chain, limit)
+        if results:
+            return results
+
+        # No CMC key (or CMC empty): fall back to CoinGecko trending
+        return self._get_trending_coingecko(chain, limit)
 
     def get_newest(self, chain: str = "ethereum", limit: int = 20) -> List[Dict[str, Any]]:
         """
@@ -218,127 +223,131 @@ class TickerResolver:
         return cmc_client.get_top_gainers(chain, limit)
 
     def _get_trending_coingecko(self, chain: str = "ethereum", limit: int = 20) -> List[Dict[str, Any]]:
-        """
-        Fallback: Get trending tokens from CoinGecko
-        """
-        try:
-            print("Using CoinGecko trending as fallback")
-            url = f"{self.coingecko_base}/search/trending"
-            response = requests.get(url, timeout=10)
+        """Fallback trending list from CoinGecko (keyless).
 
-            if response.status_code != 200:
-                print(f"CoinGecko trending failed: {response.status_code}")
+        One /coins/{id} call per trending coin (~15), so results are cached
+        in SQLite for 10 minutes like the CMC path.
+        """
+        from db import get_db
+
+        try:
+            data = self._cg_get(f"{self.coingecko_base}/search/trending")
+            if not data:
                 return []
 
-            data = response.json()
-            coins = data.get("coins", [])
-            print(f"Received {len(coins)} trending coins from CoinGecko")
-
             results = []
-            chain_map = {
-                "ethereum": "ethereum",
-                "bsc": "binance-smart-chain",
-                "polygon": "polygon-pos",
-                "arbitrum": "arbitrum-one",
-            }
-            platform_key = chain_map.get(chain.lower(), "ethereum")
-
-            for item in coins[:limit]:
-                coin = item.get("item", {})
-                coin_id = coin.get("id")
-
+            for item in data.get("coins", [])[:limit]:
+                coin_id = item.get("item", {}).get("id")
                 if not coin_id:
                     continue
-
-                # Get full coin data to extract contract address
-                try:
-                    coin_url = f"{self.coingecko_base}/coins/{coin_id}"
-                    coin_response = requests.get(coin_url, timeout=5)
-
-                    if coin_response.status_code == 200:
-                        coin_data = coin_response.json()
-                        platforms = coin_data.get("platforms", {})
-                        address = platforms.get(platform_key, "")
-
-                        if address:
-                            market_data = coin_data.get("market_data", {})
-                            results.append({
-                                "symbol": coin.get("symbol", "").upper(),
-                                "name": coin.get("name", ""),
-                                "address": address,
-                                "priceUsd": str(market_data.get("current_price", {}).get("usd", 0)),
-                                "priceChange24h": float(market_data.get("price_change_percentage_24h", 0)),
-                                "volume24h": int(market_data.get("total_volume", {}).get("usd", 0)),
-                                "liquidity": int(market_data.get("total_volume", {}).get("usd", 0) * 0.1),  # Estimate
-                                "totalSupply": int(market_data.get("total_supply", 0)) if market_data.get("total_supply") else None,
-                                "circulatingSupply": int(market_data.get("circulating_supply", 0)) if market_data.get("circulating_supply") else None,
-                                "marketCap": int(market_data.get("market_cap", {}).get("usd", 0)),
-                                "fdv": int(market_data.get("fully_diluted_valuation", {}).get("usd", 0)),
-                                "exchanges": ["coingecko"],
-                                "exchangeCount": 1,
-                                "pairCount": 1,
-                                "chain": chain,
-                                "riskScore": 50  # Default moderate risk for CoinGecko trending
-                            })
-                except Exception as e:
-                    print(f"Error fetching coin {coin_id}: {e}")
+                coin_data = self._cg_get(f"{self.coingecko_base}/coins/{coin_id}")
+                if not coin_data:
                     continue
+                token = self._cg_trending_token(coin_data, chain)
+                if token:
+                    results.append(token)
 
-            print(f"Returning {len(results)} tokens from CoinGecko")
+            if results:
+                get_db().save_trending(chain, results, ttl_minutes=10)
             return results
 
         except Exception as e:
-            print(f"CoinGecko trending error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"CoinGecko trending error: {e}")
             return []
+
+    def _cg_get(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
+        """GET a CoinGecko endpoint, returning None on any failure."""
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code != 200:
+                logger.warning(f"CoinGecko {url} returned {response.status_code}")
+                return None
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"CoinGecko request failed: {e}")
+            return None
+
+    def _cg_trending_token(self, coin_data: Dict[str, Any], chain: str) -> Optional[Dict[str, Any]]:
+        """Build a trending-list row from a CoinGecko /coins/{id} payload.
+
+        Only real fields: no invented liquidity, exchange names, or default
+        risk scores. Returns None when the coin has no address on the chain.
+        """
+        chain_map = {
+            "ethereum": "ethereum",
+            "bsc": "binance-smart-chain",
+            "polygon": "polygon-pos",
+            "arbitrum": "arbitrum-one",
+        }
+        platform_key = chain_map.get(chain.lower(), "ethereum")
+        address = (coin_data.get("platforms") or {}).get(platform_key)
+        if not address:
+            return None
+
+        market_data = coin_data.get("market_data", {})
+        market_cap = market_data.get("market_cap", {}).get("usd")
+        volume = market_data.get("total_volume", {}).get("usd")
+        price_change = market_data.get("price_change_percentage_24h")
+
+        token = {
+            "symbol": coin_data.get("symbol", "").upper(),
+            "name": coin_data.get("name", ""),
+            "address": address,
+            "priceUsd": str(market_data.get("current_price", {}).get("usd", 0)),
+            "priceChange24h": round(price_change, 2) if price_change is not None else 0,
+            "volume24h": int(volume) if volume else None,
+            "liquidity": None,  # CoinGecko does not provide pool liquidity
+            "totalSupply": int(market_data["total_supply"]) if market_data.get("total_supply") else None,
+            "circulatingSupply": int(market_data["circulating_supply"]) if market_data.get("circulating_supply") else None,
+            "marketCap": int(market_cap) if market_cap else None,
+            "fdv": int(market_data["fully_diluted_valuation"]["usd"]) if market_data.get("fully_diluted_valuation", {}).get("usd") else None,
+            "chain": chain,
+            "source": "coingecko",
+        }
+        token["riskScore"] = self._calculate_quick_risk(token)
+        return token
 
     def _calculate_quick_risk(self, token: Dict[str, Any]) -> int:
         """
-        Quick risk assessment for trending tokens
+        Quick risk assessment for trending-list rows
         Returns: 0-100 (higher = riskier)
+
+        Only fields that are actually present move the score — unknown data
+        is unknown, not bad.
         """
         risk = 0
 
-        # Liquidity check
-        liquidity = token.get("liquidity", 0)
-        if liquidity < 10000:
-            risk += 30
-        elif liquidity < 50000:
-            risk += 15
-        elif liquidity > 500000:
-            risk -= 10  # Good liquidity
+        liquidity = token.get("liquidity")
+        if liquidity is not None:
+            if liquidity < 10000:
+                risk += 30
+            elif liquidity < 50000:
+                risk += 15
+            elif liquidity > 500000:
+                risk -= 10
 
-        # Volume check
-        volume = token.get("volume24h", 0)
-        if volume < 5000:
-            risk += 20
-        elif volume < 20000:
-            risk += 10
+        volume = token.get("volume24h")
+        if volume is not None:
+            if volume < 5000:
+                risk += 20
+            elif volume < 20000:
+                risk += 10
 
-        # Exchange diversity
-        exchange_count = len(token.get("exchanges", set()))
-        if exchange_count <= 1:
-            risk += 15
-        elif exchange_count >= 5:
-            risk -= 10
-        elif exchange_count >= 3:
-            risk -= 5
+        price_change = token.get("priceChange24h")
+        if price_change is not None:
+            if abs(price_change) > 100:
+                risk += 20  # Extreme volatility
+            elif abs(price_change) > 50:
+                risk += 10
 
-        # Price volatility
-        price_change = abs(token.get("priceChange24h", 0))
-        if price_change > 100:
-            risk += 20  # Extreme volatility
-        elif price_change > 50:
-            risk += 10
+        market_cap = token.get("marketCap")
+        if market_cap is not None:
+            if market_cap < 100000:
+                risk += 15  # Very low market cap
+            elif market_cap > 1_000_000_000:
+                risk -= 10
 
-        # Market cap check
-        market_cap = token.get("marketCap", 0)
-        if market_cap > 0 and market_cap < 100000:
-            risk += 15  # Very low market cap
-
-        return max(0, min(100, risk))
-
+        return max(0, min(100, 30 + risk))  # 30 = baseline for a trending small token
 
 # Singleton instance
 _resolver = None
