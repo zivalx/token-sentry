@@ -354,40 +354,51 @@ class HealthScorer:
             else:
                 factors["liquidity"] = 0
 
-        # Liquidity locked (30 points max)
-        if metrics.liquidity_locked is True:
-            lock_score = 30
-            if metrics.liquidity_locked_pct and metrics.liquidity_locked_pct > 80:
+        # Liquidity locked (30 points max) — graded by the locked percentage
+        # when known; a 5%-locked pool is not a locked pool
+        if metrics.liquidity_locked_pct is not None:
+            locked_pct = metrics.liquidity_locked_pct
+            if locked_pct >= 80:
                 lock_score = 30
-                strengths.append(f"Liquidity {metrics.liquidity_locked_pct:.0f}% locked")
-            elif metrics.liquidity_locked_pct and metrics.liquidity_locked_pct > 50:
+                strengths.append(f"Liquidity {locked_pct:.0f}% locked")
+            elif locked_pct >= 50:
                 lock_score = 20
-                strengths.append("Majority liquidity locked")
+                strengths.append(f"Majority of liquidity locked ({locked_pct:.0f}%)")
+            elif locked_pct >= 20:
+                lock_score = 10
+                strengths.append(f"Liquidity partially locked ({locked_pct:.0f}%)")
             else:
-                lock_score = 15
-                strengths.append("Liquidity partially locked")
+                lock_score = -15
+                issues.append(f"Liquidity mostly unlocked ({locked_pct:.0f}% locked)")
             score += lock_score
             factors["locked"] = lock_score
+        elif metrics.liquidity_locked is True:
+            # Boolean-only signal, percentage unknown
+            score += 15
+            factors["locked"] = 15
+            strengths.append("Liquidity reported locked")
         elif metrics.liquidity_locked is False:
             score -= 25
             factors["locked"] = -25
             issues.append("Liquidity NOT locked (rug risk)")
 
-        # Buy/sell taxes (20 points)
-        total_tax = (metrics.buy_tax or 0) + (metrics.sell_tax or 0)
-        if total_tax == 0:
-            score += 20
-            factors["taxes"] = 20
-            strengths.append("No buy/sell taxes")
-        elif total_tax < 10:
-            score += 10
-            factors["taxes"] = 10
-        elif total_tax > 20:
-            score -= 15
-            factors["taxes"] = -15
-            issues.append(f"High taxes ({total_tax}%)")
-        else:
-            factors["taxes"] = 0
+        # Buy/sell taxes (20 points) — only when actually fetched;
+        # unknown taxes are unknown, not tax-free
+        if metrics.buy_tax is not None or metrics.sell_tax is not None:
+            total_tax = (metrics.buy_tax or 0) + (metrics.sell_tax or 0)
+            if total_tax == 0:
+                score += 20
+                factors["taxes"] = 20
+                strengths.append("No buy/sell taxes")
+            elif total_tax < 10:
+                score += 10
+                factors["taxes"] = 10
+            elif total_tax > 20:
+                score -= 15
+                factors["taxes"] = -15
+                issues.append(f"High taxes ({total_tax}%)")
+            else:
+                factors["taxes"] = 0
 
         # Honeypot check (critical)
         if metrics.honeypot_risk is True or metrics.can_sell is False:

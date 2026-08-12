@@ -81,3 +81,62 @@ class TestGoPlusRequestFormat:
         assert captured["url"].rstrip("/").endswith("/token_security/1")
         assert "chain_id" not in captured["params"]
         assert captured["params"]["contract_addresses"] == "0x" + "a" * 40
+
+
+HOLDERS_RESULT = {
+    "is_honeypot": "0",
+    "holder_count": "5000",
+    "holders": [
+        {"address": "0x" + "1" * 40, "percent": "0.32", "is_locked": 0},
+        {"address": "0x" + "2" * 40, "percent": "0.10", "is_locked": 0},
+        {"address": "0x" + "3" * 40, "percent": "0.05", "is_locked": 0},
+        {"address": "0x" + "4" * 40, "percent": "0.02", "is_locked": 0},
+    ],
+    "lp_holders": [
+        {"address": "0x" + "a" * 40, "percent": "0.70", "is_locked": 1},
+        {"address": "0x" + "b" * 40, "percent": "0.25", "is_locked": 0},
+        {"address": "0x" + "c" * 40, "percent": "0.05", "is_locked": 1},
+    ],
+}
+
+
+class TestGoPlusHolderConcentration:
+    """GoPlus's token_security response includes top holders — the strongest
+    rug signal after honeypot, previously dropped on the floor."""
+
+    def test_top_holder_percentages(self):
+        parsed = GoPlusSecurityFetcher().parse_result(HOLDERS_RESULT)
+        assert parsed.onchain.top_1_holder_pct == 32.0
+        assert parsed.onchain.top_3_holder_pct == 47.0
+        assert parsed.onchain.top_10_holder_pct == 49.0
+
+    def test_no_holder_data_means_none_not_zero(self):
+        parsed = GoPlusSecurityFetcher().parse_result(CLEAN_RESULT)
+        assert parsed.onchain.top_1_holder_pct is None
+        assert parsed.onchain.top_10_holder_pct is None
+
+
+class TestGoPlusLiquidityLock:
+    """lp_holders carry is_locked flags (lockers and burn addresses)."""
+
+    def test_locked_percentage_summed_from_locked_lp_holders(self):
+        parsed = GoPlusSecurityFetcher().parse_result(HOLDERS_RESULT)
+        assert parsed.liquidity.liquidity_locked_pct == 75.0
+        assert parsed.liquidity.liquidity_locked is True
+
+    def test_zero_locked_is_false(self):
+        result = dict(HOLDERS_RESULT, lp_holders=[
+            {"address": "0x" + "a" * 40, "percent": "1.0", "is_locked": 0},
+        ])
+        parsed = GoPlusSecurityFetcher().parse_result(result)
+        assert parsed.liquidity.liquidity_locked is False
+        assert parsed.liquidity.liquidity_locked_pct == 0.0
+
+    def test_no_lp_data_means_unknown(self):
+        parsed = GoPlusSecurityFetcher().parse_result(CLEAN_RESULT)
+        assert parsed.liquidity.liquidity_locked is None
+        assert parsed.liquidity.liquidity_locked_pct is None
+
+    def test_lp_top_holder_concentration(self):
+        parsed = GoPlusSecurityFetcher().parse_result(HOLDERS_RESULT)
+        assert parsed.liquidity.lp_top_1_holder_pct == 70.0

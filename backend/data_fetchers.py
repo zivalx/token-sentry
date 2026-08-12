@@ -553,6 +553,19 @@ class GoPlusSecurityFetcher(DataFetcher):
             except (TypeError, ValueError):
                 return None
 
+        def holder_pct(holders: Optional[List[Dict]], top_n: int) -> Optional[float]:
+            """Sum the supply share of the top N holders (GoPlus sorts desc;
+            `percent` is a 0-1 fraction string)."""
+            if not holders:
+                return None
+            total = 0.0
+            for holder in holders[:top_n]:
+                try:
+                    total += float(holder.get("percent", 0))
+                except (TypeError, ValueError):
+                    continue
+            return round(total * 100, 4)
+
         honeypot = flag("is_honeypot")
         cannot_sell_all = flag("cannot_sell_all")
 
@@ -563,6 +576,21 @@ class GoPlusSecurityFetcher(DataFetcher):
             buy_tax=pct("buy_tax"),
             sell_tax=pct("sell_tax"),
         )
+
+        # LP lock status: sum the share held by lockers/burn addresses
+        lp_holders = result.get("lp_holders")
+        if lp_holders:
+            locked = 0.0
+            for lp in lp_holders:
+                try:
+                    if lp.get("is_locked") in (1, "1", True):
+                        locked += float(lp.get("percent", 0))
+                except (TypeError, ValueError):
+                    continue
+            liquidity.liquidity_locked_pct = round(locked * 100, 4)
+            liquidity.liquidity_locked = liquidity.liquidity_locked_pct > 0
+            liquidity.lp_holders_count = len(lp_holders)
+            liquidity.lp_top_1_holder_pct = holder_pct(lp_holders, 1)
 
         onchain = OnChainMetrics(
             contract_address=contract,
@@ -579,6 +607,12 @@ class GoPlusSecurityFetcher(DataFetcher):
                 onchain.holders_count = int(holder_count)
             except (TypeError, ValueError):
                 pass
+
+        # Top-holder concentration — the strongest rug signal after honeypot
+        holders = result.get("holders")
+        onchain.top_1_holder_pct = holder_pct(holders, 1)
+        onchain.top_3_holder_pct = holder_pct(holders, 3)
+        onchain.top_10_holder_pct = holder_pct(holders, 10)
 
         vulnerabilities = []
         if flag("can_take_back_ownership"):

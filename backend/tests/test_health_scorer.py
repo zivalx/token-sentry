@@ -126,5 +126,38 @@ class TestScoreClamping:
 
     def test_risk_level_matches_clamped_overall_score(self):
         score = HealthScorer().score_token(self._mega_cap_data())
-        assert score.overall_score == 100.0
+        assert 80 <= score.overall_score <= 100
         assert score.risk_level.value == "very_low"
+
+
+class TestLiquidityLockGrading:
+    """With real locked percentages available (GoPlus lp_holders), grade by
+    percentage: a 5%-locked pool must not earn the 'partially locked' bonus
+    that was designed for meaningful locks."""
+
+    def _score(self, locked, pct):
+        return HealthScorer()._score_liquidity(
+            LiquidityMetrics(
+                total_liquidity_usd=200_000,
+                liquidity_locked=locked,
+                liquidity_locked_pct=pct,
+            )
+        )
+
+    def test_tiny_lock_scores_no_better_than_unlocked_plus_epsilon(self):
+        tiny = self._score(True, 5.0)
+        mostly = self._score(True, 90.0)
+        assert mostly.score - tiny.score >= 25
+
+    def test_tiny_lock_is_flagged_not_praised(self):
+        tiny = self._score(True, 5.0)
+        assert not any("locked" in s.lower() for s in tiny.strengths)
+        assert any("unlocked" in i.lower() or "locked" in i.lower() for i in tiny.issues)
+
+    def test_unknown_taxes_are_not_rewarded_as_zero_taxes(self):
+        """buy_tax/sell_tax of None means 'not fetched', not 'tax-free'."""
+        unknown = HealthScorer()._score_liquidity(
+            LiquidityMetrics(total_liquidity_usd=200_000)
+        )
+        assert "taxes" not in unknown.factors
+        assert not any("tax" in s.lower() for s in unknown.strengths)
