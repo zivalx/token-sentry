@@ -1348,3 +1348,8 @@ td.right {
 .chain-select:hover {
   border-color: var(--accent-blue);
 }
+
+.history-sparkline {
+  display: block;
+  margin: 0.25rem 0 0.6rem;
+}

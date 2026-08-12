@@ -3,6 +3,61 @@ import axios from 'axios'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+function ScoreSparkline({ history }) {
+  // history arrives newest-first; plot time left→right
+  const points = [...history].reverse()
+  if (points.length < 2) return null
+
+  const width = 260
+  const height = 56
+  const pad = 8
+
+  const scores = points.map(p => p.score)
+  // Pad the value range so small real changes are visible but a flat
+  // history renders as a centered flat line, not amplified noise
+  const min = Math.max(0, Math.min(...scores) - 5)
+  const max = Math.min(100, Math.max(...scores) + 5)
+  const span = max - min || 1
+
+  const x = i => pad + (i * (width - 2 * pad)) / (points.length - 1)
+  const y = s => height - pad - ((s - min) * (height - 2 * pad)) / span
+  const path = points.map((p, i) => `${x(i).toFixed(1)},${y(p.score).toFixed(1)}`).join(' ')
+  const last = points[points.length - 1]
+
+  return (
+    <svg
+      className="history-sparkline"
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      role="img"
+      aria-label={`Score trend across ${points.length} analyses, latest ${last.score.toFixed(1)}`}
+    >
+      <polyline
+        points={path}
+        fill="none"
+        stroke="var(--accent-blue)"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {points.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.score)} r="8" fill="transparent">
+          <title>{`${p.score.toFixed(1)} — ${p.created_at}`}</title>
+        </circle>
+      ))}
+      <circle
+        cx={x(points.length - 1)}
+        cy={y(last.score)}
+        r="4"
+        fill="var(--accent-blue)"
+        stroke="var(--bg-tertiary)"
+        strokeWidth="2"
+      />
+    </svg>
+  )
+}
+
 function TokenDetailModal({ token, onClose }) {
   const [loading, setLoading] = useState(false)
   const [analysis, setAnalysis] = useState(null)
@@ -160,6 +215,7 @@ function TokenDetailModal({ token, onClose }) {
                       </p>
                     )
                   })()}
+                  <ScoreSparkline history={history} />
                   <ul className="history-list">
                     {history.map((row, idx) => (
                       <li key={idx}>

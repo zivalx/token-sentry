@@ -159,7 +159,6 @@ token-sentry/
 ## Roadmap
 
 - [ ] Scheduled re-scoring (history currently accrues on demand)
-- [ ] Score-history sparkline in the report modal
 - [ ] Social metrics beyond GitHub (Twitter/Telegram APIs are paid/gated — parked rather than faked)
 
 ## Contributing
